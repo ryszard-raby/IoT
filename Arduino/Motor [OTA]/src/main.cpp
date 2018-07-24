@@ -89,12 +89,9 @@ void OTAsetup(){
   Serial.println(WiFi.localIP());
 }
 
-Servo motor;
-
 void programSetup(){
   pinMode(dir1, OUTPUT);
   pinMode(dir2, OUTPUT);
-  //motor.attach(pwm1);
   pinMode(pwm1, OUTPUT);
 }
 
@@ -114,6 +111,11 @@ BLYNK_WRITE(V2){
   digitalWrite(dir2, param.asInt());
 }
 
+BLYNK_WRITE(V3){
+  digitalWrite(dir1, param.asInt());
+  digitalWrite(dir2, param.asInt()-1);
+}
+
 void setup()
 {
   OTAsetup();
@@ -125,7 +127,8 @@ void loop()
 {
   ArduinoOTA.handle();
   Blynk.run();
-  timer.run();
+
+  //timer.run();
 
   // You can inject your own code or combine it with other sketches.
   // Check other examples on how to communicate with Blynk. Remember
