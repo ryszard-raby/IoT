@@ -24,9 +24,7 @@ char auth[] = Token_MotorOTA;
 char ssid[] = AuthSsid;
 char pass[] = AuthPass;
 
-int dir1 = 2;
-int dir2 = 0;
-int pwm1 = 5;
+int pwm = 5;
 
 void OTAsetup(){
 // OTAsetup
@@ -89,48 +87,59 @@ void OTAsetup(){
   Serial.println(WiFi.localIP());
 }
 
+int NbTopsFan; int Calc;
+int hallsensor = 12; typedef struct{
+ 
+//Defines the structure for multiple fans and 
+//their dividers 
+char fantype;
+unsigned int fandiv; }fanspec;
+ 
+//Definitions of the fans
+//This is the varible used to select the fan and it's divider,
+//set 1 for unipole hall effect sensor
+//and 2 for bipole hall effect sensor
+fanspec fanspace[3]={{0,1},{1,2},{2,8}}; char fan = 1;
+
+void rpm ()
+{
+  NbTopsFan++;
+}
+
 void programSetup(){
-  pinMode(dir1, OUTPUT);
-  pinMode(dir2, OUTPUT);
-  pinMode(pwm1, OUTPUT);
+  pinMode(pwm, OUTPUT);
+  pinMode(hallsensor, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(hallsensor), rpm, RISING);
 }
 
 void program(){
-
+  //Disable interrupts
+  NbTopsFan = 0;
+  //Enables interrupts
+  sei();
+  delay(1000);
+  cli();
+ 
+  //Times NbTopsFan (which is apprioxiamately the fequency the fan 
+  //is spinning at) by 60 seconds before dividing by the fan's divider
+  Calc = ((NbTopsFan * 60)/fanspace[fan].fandiv); 
+  Blynk.virtualWrite(V1, Calc);
 }
 
 BLYNK_WRITE(V0){
-  analogWrite(pwm1, param.asInt());
-}
-
-BLYNK_WRITE(V1){
-  digitalWrite(dir1, param.asInt());
-}
-
-BLYNK_WRITE(V2){
-  digitalWrite(dir2, param.asInt());
-}
-
-BLYNK_WRITE(V3){
-  digitalWrite(dir1, param.asInt());
-  digitalWrite(dir2, param.asInt()-1);
+  analogWrite(pwm, param.asInt());
 }
 
 void setup()
 {
   OTAsetup();
   programSetup();
-  //timer.setInterval(500L, program);
+  timer.setInterval(200L, program);
 }
 
 void loop()
 {
   ArduinoOTA.handle();
   Blynk.run();
-
-  //timer.run();
-
-  // You can inject your own code or combine it with other sketches.
-  // Check other examples on how to communicate with Blynk. Remember
-  // to avoid delay() function!
+  timer.run();
 }

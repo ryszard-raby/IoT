@@ -82,21 +82,21 @@ void OTAsetup(){
   Serial.println(WiFi.localIP());
 }
 
-void mainSetup(){
+void programSetup(){
   // pinMode(2, OUTPUT);
 }
 
-void main(){
+void program(){
   Blynk.virtualWrite(V0, AuthSsid);
   Blynk.virtualWrite(V1, AuthPass);
-  Blynk.virtualWrite(V2, BlynkToken);
+  Blynk.virtualWrite(V2, Token_BlynkOTA);
 }
 
 void setup()
 {
   OTAsetup();
   programSetup();
-  timer.setInterval(1000L, main);
+  timer.setInterval(1000L, program);
 }
 
 void loop()
