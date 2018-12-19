@@ -88,7 +88,7 @@ void OTAsetup(){
 Servo servo;
 
 void programSetup(){
-  
+  servo.attach(15);
 }
 
 void program(){
@@ -96,13 +96,7 @@ void program(){
 }
 
 void moveServo(int value){
-  Blynk.virtualWrite(V3, "attach");
-  servo.attach(15);
   servo.write(value);
-
-  delay(1000);
-  servo.detach();
-  Blynk.virtualWrite(V3, "detach");
 }
 
 BLYNK_WRITE(V0){
@@ -121,7 +115,6 @@ void loop()
   ArduinoOTA.handle();
   Blynk.run();
   timer.run();
-  // program();
   // You can inject your own code or combine it with other sketches.
   // Check other examples on how to communicate with Blynk. Remember
   // to avoid delay() function!

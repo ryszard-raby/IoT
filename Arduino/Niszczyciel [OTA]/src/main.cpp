@@ -83,25 +83,27 @@ void OTAsetup(){
   Serial.println(WiFi.localIP());
 }
 
-int pin2 = 2;
-int pin5 = 5;
-int pin16 = 16;
+int led = 4; 
+int boardLed = 2;
+int power = 13;
 
 void programSetup(){
-  pinMode(pin2, INPUT);
-  pinMode(pin5, OUTPUT);
+  pinMode(led, INPUT);
+  pinMode(power, OUTPUT);
+  pinMode(boardLed, OUTPUT);
 }
 
 void program(){
-  Blynk.virtualWrite(V2, digitalRead(pin2)*255);
+  Blynk.virtualWrite(V2, digitalRead(led)*255);
+  digitalWrite(boardLed, led);
 }
 
 BLYNK_WRITE(V0)
 {
   int pinValue = param.asInt(); // assigning incoming value from pin V4 to a variable
-  if (pinValue) digitalWrite(pin5, HIGH);
-  else digitalWrite(pin5, LOW);
-  digitalWrite(V2, digitalRead(pin5));
+  if (pinValue) digitalWrite(power, HIGH);
+  else digitalWrite(power, LOW);
+  //digitalWrite(V2, digitalRead(led)); 
   // process received value
 }
 
@@ -109,7 +111,7 @@ void setup()
 {
   OTAsetup();
   programSetup();
-  timer.setInterval(500L, program);
+  timer.setInterval(100L, program);
 }
 
 void loop()
