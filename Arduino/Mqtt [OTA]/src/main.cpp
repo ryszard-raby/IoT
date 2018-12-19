@@ -3,37 +3,44 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
+
+#include <PubSubClient.h>
+
 #include <C:/auth/auth.h>
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-char ssid[] = AuthSsid;
-char pass[] = AuthPass;
+const char* ssid = AuthSsid;
+const char* password = AuthPass;
+
+const char* mqttServer = "localhost";
+const int mqttPort = 12948;
+
+int ledPin = 16;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void program();
+
+void callback(char* topic, byte* payload, unsigned int length) {
+ 
+  Serial.print("Message arrived in topic: ");
+  Serial.println(topic);
+ 
+  Serial.print("Message:");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+ 
+  Serial.println();
+  Serial.println("-----------------------");
+ 
+}
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println("Booting");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
-  // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname("myesp8266");
-
-  // No authentication by default
-  ArduinoOTA.setPassword("admin");
-
-  // Password can be set with it's md5 value as well
-  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
+  ArduinoOTA.setHostname("MQTT ESP8266");
+  //ArduinoOTA.setPassword("admin");
   ArduinoOTA.onStart([]() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH) {
@@ -41,8 +48,6 @@ void setup() {
     } else { // U_SPIFFS
       type = "filesystem";
     }
-
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
     Serial.println("Start updating " + type);
   });
   ArduinoOTA.onEnd([]() {
@@ -70,23 +75,46 @@ void setup() {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  // program setup
-
-  pinMode(12, OUTPUT);
+  // program setupWiFi.begin(ssid, password);
+ 
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
+ 
+  while (!client.connected()) {
+    Serial.println("Connecting to MQTT...");
+ 
+    if (client.connect("ESP8266Client")) {
+ 
+      Serial.println("connected");  
+ 
+    } else {
+ 
+      Serial.print("failed with state ");
+      Serial.print(client.state());
+      delay(2000);
+ 
+    }
+  }
+ 
+  client.publish("ledStatus", "Hello from ESP8266");
+  client.subscribe("ledStatus");
+  program();
 }
 
+
+
 void program(){
-  digitalWrite(12, LOW);
+  digitalWrite(ledPin, HIGH);
 
-  delay(5000);
-  digitalWrite(12, HIGH);
+  delay(2000);
+  digitalWrite(ledPin, LOW);
 
-  delay(100);
+  //delay(2000);
 }
 
 void loop() {
   ArduinoOTA.handle();
-  program();
+  client.loop();
 }
 
 

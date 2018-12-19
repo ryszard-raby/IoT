@@ -24,7 +24,7 @@ char auth[] = Token_MotorOTA;
 char ssid[] = AuthSsid;
 char pass[] = AuthPass;
 
-int pwm = 5;
+int pwm = 5; // blue - pwm
 
 void OTAsetup(){
 // OTAsetup
@@ -88,7 +88,7 @@ void OTAsetup(){
 }
 
 int NbTopsFan; int Calc;
-int hallsensor = 12; typedef struct{
+int hallsensor = 12; typedef struct{ // green - tach 
  
 //Defines the structure for multiple fans and 
 //their dividers 

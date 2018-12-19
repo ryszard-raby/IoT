@@ -3,18 +3,14 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
-#include <C:/auth/auth.h>
-
-// Your WiFi credentials.
-// Set password to "" for open networks.
-char ssid[] = AuthSsid;
-char pass[] = AuthPass;
+const char* ssid = "..........";
+const char* password = "..........";
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
+  WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     Serial.println("Connection Failed! Rebooting...");
     delay(5000);
@@ -25,10 +21,10 @@ void setup() {
   // ArduinoOTA.setPort(8266);
 
   // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname("myesp8266");
+  // ArduinoOTA.setHostname("myesp8266");
 
   // No authentication by default
-  ArduinoOTA.setPassword("admin");
+  // ArduinoOTA.setPassword("admin");
 
   // Password can be set with it's md5 value as well
   // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
@@ -69,24 +65,8 @@ void setup() {
   Serial.println("Ready");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-
-  // program setup
-
-  pinMode(12, OUTPUT);
-}
-
-void program(){
-  digitalWrite(12, LOW);
-
-  delay(5000);
-  digitalWrite(12, HIGH);
-
-  delay(100);
 }
 
 void loop() {
   ArduinoOTA.handle();
-  program();
 }
-
-
