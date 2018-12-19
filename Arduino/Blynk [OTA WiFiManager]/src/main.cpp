@@ -8,6 +8,9 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
+
 #include <C:/auth/auth.h>
 #include <C:/auth/blynkToken.h>
 
@@ -23,19 +26,7 @@ char pass[] = AuthPass;
 
 void OTAsetup(){
 // Debug console
-  Serial.begin(115200);
 
-  Blynk.begin(auth, ssid, pass);
-  // You can also specify server:
-  //Blynk.begin(auth, ssid, pass, "blynk-cloud.com", 80);
-  //Blynk.begin(auth, ssid, pass, IPAddress(192,168,1,100), 8080);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
   ArduinoOTA.setHostname("ArduinoOta");
 
   // No authentication by default
@@ -83,6 +74,11 @@ void OTAsetup(){
 }
 
 void programSetup(){
+  Serial.begin(115200);
+  WiFiManager wifiManager;
+  WiFiManagerParameter custom_blynk_token("blynk", "blynk token", auth, 32);
+  wifiManager.autoConnect("AutoConnectAP");
+  
   // pinMode(2, OUTPUT);
 }
 
