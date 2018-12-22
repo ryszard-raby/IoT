@@ -100,6 +100,12 @@ void loop()
   ArduinoOTA.handle();
   Blynk.run();
   timer.run();
+  digitalWrite(12, LOW);
+
+  delay(5000);
+  digitalWrite(12, HIGH);
+
+  delay(100);
   // You can inject your own code or combine it with other sketches.
   // Check other examples on how to communicate with Blynk. Remember
   // to avoid delay() function!
