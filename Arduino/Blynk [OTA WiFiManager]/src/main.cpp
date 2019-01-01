@@ -6,11 +6,12 @@
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 
 #include <ArduinoOTA.h>
+#include <BlynkSimpleEsp8266.h>
 
 #include <C:/auth/blynkToken.h>
 
-char blynk_token[33] = Token_BlynkWiFiOTA;
-//#include <BlynkSimpleEsp8266.h>
+char blynk_token[] = Token_BlynkWiFiOTA;
+BlynkTimer timer;
 
 // select which pin will trigger the configuration portal when set to LOW
 // ESP-01 users please note: the only pins available (0 and 2), are shared 
@@ -61,7 +62,17 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   Serial.println("\n Starting");
+
+  WiFiManager wifiManager;
+  //WiFiManagerParameter custom_blynk_token("Blynk", "blynk token", blynk_token, 33);
+  //wifiManager.addParameter(&custom_blynk_token);
+  //wifiManager.autoConnect("Blynk");
+
+  Blynk.config(blynk_token);
+  Blynk.connect();
+
   otaSetup();
+
   pinMode(TRIGGER_PIN, INPUT);
 }
 
@@ -70,9 +81,7 @@ void loop() {
   if ( digitalRead(TRIGGER_PIN) == LOW ) {
     //WiFiManager
     //Local intialization. Once its business is done, there is no need to keep it around
-    WiFiManagerParameter custom_blynk_token("blynk", "blynk token", blynk_token, 34);
     WiFiManager wifiManager;
-    wifiManager.addParameter(&custom_blynk_token);
     //reset settings - for testing
     //wifiManager.resetSettings();
 
@@ -88,7 +97,7 @@ void loop() {
     //WITHOUT THIS THE AP DOES NOT SEEM TO WORK PROPERLY WITH SDK 1.5 , update to at least 1.5.1
     //WiFi.mode(WIFI_STA);
     
-    if (!wifiManager.startConfigPortal("OnDemandAP")) {
+    if (!wifiManager.startConfigPortal("Rocket Launcher")) {
       Serial.println("failed to connect and hit timeout");
       delay(3000);
       //reset and try again, or maybe put it to deep sleep
@@ -100,8 +109,9 @@ void loop() {
     Serial.println("connected...yeey :)");
     //strcpy(blynk_token, custom_blynk_token.getValue());
   }
-
+    Blynk.run();
+    timer.run();
     ArduinoOTA.handle();
-    digitalWrite(12, HIGH);
+    Blynk.virtualWrite(V0, 'Ania');
   // put your main code here, to run repeatedly:
 }
