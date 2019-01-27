@@ -16,13 +16,6 @@
 #include <IRutils.h>
 #include <IRsend.h>
 
-uint16_t Samsung_power_toggle[71] = {
-    38000, 1,  1,  170, 170, 20, 63, 20, 63, 20, 63,  20, 20, 20, 20,
-    20,    20, 20, 20,  20,  20, 20, 63, 20, 63, 20,  63, 20, 20, 20,
-    20,    20, 20, 20,  20,  20, 20, 20, 20, 20, 63,  20, 20, 20, 20,
-    20,    20, 20, 20,  20,  20, 20, 20, 20, 63, 20,  20, 20, 63, 20,
-    63,    20, 63, 20,  63,  20, 63, 20, 63, 20, 1798};
-
 BlynkTimer timer;
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
@@ -125,7 +118,7 @@ void program(){
 }
 
 BLYNK_WRITE(V1){
-     irsend.sendGC(Samsung_power_toggle, 71);
+     irsend.sendNEC(0x57EFF00FF, 71);
 }
 
 void setup()
