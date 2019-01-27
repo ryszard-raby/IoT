@@ -4,8 +4,8 @@
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 
-#include <ESP8266mDNS.h>
-#include <WiFiUdp.h>
+//#include <ESP8266mDNS.h>
+//#include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
 #include <C:/auth/auth.h>
@@ -14,7 +14,7 @@
 BlynkTimer timer;
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
-char auth[] = Token_BlynkOTA;
+char auth[] = Token_iRRemote;
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
