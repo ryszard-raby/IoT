@@ -12,12 +12,11 @@
 #include <C:/auth/blynkToken.h>
 
 #include <IRremoteESP8266.h>
-#include <IRsend.h>
+#include <IRrecv.h>
+#include <IRutils.h>
 
-
-int RECV_PIN = 11;
-
-IRrecv irrecv(RECV_PIN);
+const uint16_t kRecvPin = 14;
+IRrecv irrecv(kRecvPin);
 decode_results results;
 
 BlynkTimer timer;
