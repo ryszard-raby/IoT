@@ -111,7 +111,7 @@ void setup()
 {
   OTAsetup();
   programSetup();
-  timer.setInterval(100L, program);
+  //timer.setInterval(100L, program);
 }
 
 void loop()
@@ -119,6 +119,7 @@ void loop()
   ArduinoOTA.handle();
   Blynk.run();
   timer.run();
+  program();
   // You can inject your own code or combine it with other sketches.
   // Check other examples on how to communicate with Blynk. Remember
   // to avoid delay() function!
