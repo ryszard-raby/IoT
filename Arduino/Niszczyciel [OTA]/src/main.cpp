@@ -83,19 +83,21 @@ void OTAsetup(){
   Serial.println(WiFi.localIP());
 }
 
-int led = 4; 
+int powerLed = 4; 
 int boardLed = 2;
 int power = 13;
 
 void programSetup(){
-  pinMode(led, INPUT);
+  pinMode(powerLed, INPUT);
   pinMode(power, OUTPUT);
   pinMode(boardLed, OUTPUT);
 }
 
 void program(){
-  Blynk.virtualWrite(V2, digitalRead(led)*255);
-  digitalWrite(boardLed, led);
+  int powerLedValue = digitalRead(powerLed);
+  Blynk.virtualWrite(V2, powerLedValue*255);
+  if (powerLedValue) digitalWrite(boardLed, LOW);
+  else digitalWrite(boardLed, HIGH);
 }
 
 BLYNK_WRITE(V0)
@@ -119,6 +121,7 @@ void loop()
   ArduinoOTA.handle();
   Blynk.run();
   timer.run();
+  //program;
   // You can inject your own code or combine it with other sketches.
   // Check other examples on how to communicate with Blynk. Remember
   // to avoid delay() function!
