@@ -1,35 +1,35 @@
+#include <Arduino.h>
+
+#define BLYNK_PRINT Serial
 #include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
-const char* ssid = "Jaskinia Himena";
-const char* password = "charon13";
+#include <C:/auth/auth.h>
+#include <C:/auth/blynkToken.h>
 
-void setup() {
+BlynkTimer timer;
+char auth[] = Token_WaterTank;
+
+char ssid[] = AuthSsid;
+char pass[] = AuthPass;
+
+void OTAsetup(){
   Serial.begin(115200);
-  Serial.println("Booting");
+  Blynk.begin(auth, ssid, pass);
+
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, pass);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     Serial.println("Connection Failed! Rebooting...");
     delay(5000);
     ESP.restart();
   }
-
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
-  // Hostname defaults to esp8266-[ChipID]
-  // ArduinoOTA.setHostname("myesp8266");
-
-  // No authentication by default
-  // ArduinoOTA.setPassword("admin");
-
-  // Password can be set with it's md5 value as well
-  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
+  ArduinoOTA.setHostname("ArduinoOta");
+  ArduinoOTA.setPassword("admin");
   ArduinoOTA.onStart([]() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH) {
@@ -37,8 +37,6 @@ void setup() {
     } else { // U_SPIFFS
       type = "filesystem";
     }
-
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
     Serial.println("Start updating " + type);
   });
   ArduinoOTA.onEnd([]() {
@@ -67,6 +65,21 @@ void setup() {
   Serial.println(WiFi.localIP());
 }
 
-void loop() {
+void programSetup(){
+}
+
+void program(){
+}
+
+void setup()
+{
+  OTAsetup();
+  programSetup();
+}
+
+void loop()
+{
   ArduinoOTA.handle();
+  Blynk.run();
+  timer.run();
 }
