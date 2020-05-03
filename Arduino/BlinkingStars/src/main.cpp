@@ -14,6 +14,7 @@ int easeType = 0;
 int minValue = 0;
 int maxValue = 1023;
 int step = 10;
+int analogMax = 50;
 
 Interval interval0;
 
@@ -23,7 +24,7 @@ void serialPrint(int value) {
 }
 
 int analogValue() {
-  return map(analogRead(analogInPin), 0, 1023, 0, 200);
+  return map(analogRead(analogInPin), 20, 1023, 0, analogMax);
 }
 
 int easeTypeValue () {
@@ -38,10 +39,12 @@ int easeTypeValue () {
 
 void fade() {
 
+  int getAnalogValue = analogValue();
+
   fadeValue = fadeValue + fadeDirection;
+  step = map(getAnalogValue, 0, analogMax, analogMax, 1);
 
   easeType = easeTypeValue();
-  // serialPrint(digitalRead(configPin_1));
 
   switch(easeType) {
     case 1:
@@ -99,6 +102,7 @@ void loop() {
   if (abs(analogValueTemp - getAnalogValue) > 1) {
     interval0.cancel();
     analogValueTemp = getAnalogValue;
-    interval0.interval(analogValue(), fade);
+    interval0.interval(getAnalogValue, fade);
+    // serialPrint(getAnalogValue);
   }
 }
