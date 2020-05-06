@@ -14,7 +14,7 @@
 BlynkTimer timer;
 // You should get Auth Token in the Blynk App.
 // Go to the Project Settings (nut icon).
-char auth[] = Token_BlynkOTA;
+char auth[] = Token_WaterTank;
 
 // Your WiFi credentials.
 // Set password to "" for open networks.

@@ -7,18 +7,17 @@
 
 BlynkTimer timer;
 
-char auth[] = Token_WaterTank;
-
+char auth[] = Token_BlynkTest;
 char ssid[] = AuthSsid;
 char pass[] = AuthPass;
 
-void OTAsetup(){
-  Serial.begin(115200);
-  Blynk.begin(auth, ssid, pass);
+BLYNK_WRITE(V5)
+{
+  Blynk.virtualWrite(V0, param.asInt());
+  Serial.print("Got a value: ");
+  Serial.println(param.asStr());
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  digitalWrite(5, param.asInt());
+  digitalWrite(2, 1 - param.asInt());
 }
 
 void setup()
@@ -26,14 +25,11 @@ void setup()
   Serial.begin(115200);
   Blynk.begin(auth, ssid, pass);
 
-  pinMode(5, OUTPUT);
+  pinMode(2, OUTPUT);
   digitalWrite(2, 1);
-  digitalWrite(5, 0);
 }
 
 void loop()
 {
-  ArduinoOTA.handle();
   Blynk.run();
-  timer.run();
 }
