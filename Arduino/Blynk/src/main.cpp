@@ -7,7 +7,7 @@
 
 BlynkTimer timer;
 
-char auth[] = Token_WaterTank;
+char auth[] = Token_BlynkTest;
 char ssid[] = AuthSsid;
 char pass[] = AuthPass;
 
