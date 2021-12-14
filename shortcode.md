@@ -42,3 +42,26 @@ ampy --port COM3 rm test.py
 ampy --port COM3 rmdir /lib
 ampy --port COM3 run main.py
 ```
+
+# var type
+```
+SPECIFIER	INPUT TYPE	OUTPUT FORMAT
+u			uint16_t	decimal
+ul			uint32_t	decimal
+d			int16_t		decimal
+l			int32_t		decimal
+f			float		decimal
+x			uint16_t	hexadecimal
+o			uint16_t	octal
+b			uint16_t	binary
+c			char		ASCII
+s			char*		ASCII string
+%			char		"%%" outputs "%"
+```
+
+# Serial
+
+start/stop - timestamp
+```
+Serial.printf("start: %.0f:%.0f:%.0f   stop: %.0f:%.0f:%.0f \n", floor(start / 3600), floor(start % 3600 / 60), floor(start % 3600 % 60), floor(stop / 3600), floor(stop % 3600 / 60), floor(stop % 3600 % 60));
+```

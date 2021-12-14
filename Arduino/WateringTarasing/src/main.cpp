@@ -3,6 +3,7 @@
 #include <BlynkSimpleEsp8266.h>
 #include <TimeLib.h>
 #include <WidgetRTC.h>
+#include <math.h>
 
 #include <C:/auth/auth.h>
 #include <C:/auth/blynkToken.h>
@@ -12,26 +13,26 @@ BlynkTimer timer;
 WidgetRTC rtc;
 
 char auth[] = Token_WateringTarasing;
-char ssid[] = AuthSsid;
 char pass[] = AuthPass;
+char ssid[] = AuthSsid;
 
-int interval = 60 * 10;
-int watering1 = 3600 * 7;
-int watering2 = 3600 * 19;
+int interval = 0;
+int watering1 = 0;
+int watering2 = 0;
 bool setWatering = false;
 bool canceled = false;
 int start;
 int stop;
 
-
-
 void startWatering(){
   digitalWrite(2, 0);
+  digitalWrite(5, 0);
   Blynk.virtualWrite(V0, 1);
 }
 
 void stopWatering(){
   digitalWrite(2, 1);
+  digitalWrite(5, 1);
   Blynk.virtualWrite(V0, 0);
 }
 
@@ -50,13 +51,13 @@ void printClock()
 void timeRefresh()
 {
   int TimeNow = getTimeNow();
-  if (TimeNow > watering1 && TimeNow < watering1 + interval) {
+  if (TimeNow >= watering1 && TimeNow <= watering1 + interval) {
     if (!canceled) {
       start = watering1;
       stop = watering1 + interval;
     }
   }
-  else if (TimeNow > watering2 && TimeNow < watering2 + interval) {
+  else if (TimeNow >= watering2 && TimeNow <= watering2 + interval) {
     if (!canceled) {
       start = watering2;
       stop = watering2 + interval;
@@ -75,6 +76,11 @@ void timeRefresh()
     start = 0; 
     stop = 0;
   }
+
+
+  Blynk.virtualWrite(V2, canceled);
+
+  Serial.printf("start: %.0f:%.0f:%.0f   stop: %.0f:%.0f:%.0f \n", floor(start / 3600), floor(start % 3600 / 60), floor(start % 3600 % 60), floor(stop / 3600), floor(stop % 3600 / 60), floor(stop % 3600 % 60));
 
   printClock();
 }
@@ -121,7 +127,11 @@ void setup()
   Blynk.begin(auth, ssid, pass);
 
   pinMode(2, OUTPUT);
+  pinMode(5, OUTPUT);
   digitalWrite(2, 1);
+  digitalWrite(5, 1);
+
+  // Blynk.virtualWrite(V0, 0);
 
   timer.setInterval(8000L, timeRefresh);
 }
