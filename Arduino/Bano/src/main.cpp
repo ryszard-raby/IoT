@@ -73,12 +73,26 @@ BLYNK_WRITE(V13)
   config.brightness2 = param.asInt();
 }
 
+BLYNK_WRITE(V14)
+{
+  config.timer3 = param.asInt();
+}
+
+BLYNK_WRITE(V15)
+{
+  config.brightness3 = param.asInt();
+}
+
 BLYNK_WRITE(V50) {
   config.storage1 = param.asInt();
 }
 
 BLYNK_WRITE(V51) {
   config.storage2 = param.asInt();
+}
+
+BLYNK_WRITE(V52) {
+  config.storage3 = param.asInt();
 }
 
 void fade() {
@@ -120,7 +134,6 @@ int getDayNow() {
 void setBrightness(int brightness, int storage, int slot) {
     config.brightness_max = 1024 * brightness / 100;
     Blynk.virtualWrite(V2, config.brightness_max);
-    storage = getDayNow();
     Blynk.virtualWrite(slot, storage); // check slot! V50 -> 50
 }
 
@@ -128,10 +141,16 @@ void timeCheck() {
   int timeNow = getTimeNow();
 
   if (timeNow >= config.timer1 && config.storage1 != getDayNow()) {
+    config.storage1 = getDayNow();
     setBrightness(config.brightness1, config.storage1, 50);
   }
   if (timeNow >= config.timer2 && config.storage2 != getDayNow()) {
+    config.storage2 = getDayNow();
     setBrightness(config.brightness2, config.storage2, 51);
+  }
+  if (timeNow >= config.timer3 && config.storage3 != getDayNow()) {
+    config.storage3 = getDayNow();
+    setBrightness(config.brightness3, config.storage3, 52);
   }
 }
 

@@ -16,4 +16,7 @@ class Config {
         int timer2;
         int brightness2;
         int storage2;
+        int timer3;
+        int brightness3;
+        int storage3;
 };
