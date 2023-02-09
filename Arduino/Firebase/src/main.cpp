@@ -12,15 +12,22 @@
 
 #include <C:/auth.h>
 
-#define FIREBASE_PROJECT_ID "iot-api-63872"
-
 FirebaseData fbData;
 FirebaseAuth fbAuth;
 FirebaseConfig fbConfig;
 
+FirebaseJson json;
+
 unsigned long dataMillis = 0;
 int cout = 0;
 uint8_t builtInLed = 2;
+
+std::string userid = USERID;
+std::string projectid = PROJECTID;
+std::string deviceid = DEVICEID;
+std::string gpio = "gpio2";
+
+int intData;
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -55,8 +62,11 @@ void connectFirebase() {
   Firebase.begin(&fbConfig, &fbAuth);
 
   Firebase.reconnectWiFi(true);
-  if (!Firebase.RTDB.beginStream(&fbData, "/led"))
-    Serial.printf("Stream begin error %s\n\n", fbData.errorReason().c_str());
+
+  std::string path = "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/" + gpio;
+
+  if (!Firebase.RTDB.beginStream(&fbData, path))
+      Serial.printf("Stream begin error %s\n\n", fbData.errorReason().c_str());
 }
 
 void setup() {
@@ -68,8 +78,8 @@ void setup() {
   connectFirebase();
 }
 
-void loop() {
-  if (Firebase.ready()) {
+void firebaseStream() {
+ if (Firebase.ready()) {
     if (!Firebase.RTDB.readStream(&fbData))
       Serial.printf("Stream read error %s\n\n", fbData.errorReason().c_str());
     if (fbData.streamTimeout())
@@ -81,14 +91,24 @@ void loop() {
         fbData.dataType().c_str(),
         fbData.eventType().c_str(),
         fbData.intData());
-    }
-    if (fbData.dataType() == "int") {
-      if (fbData.intData() == 1) {
-        digitalWrite(builtInLed, HIGH);
+
+      if (fbData.dataType() == "int") {
+        analogWrite(builtInLed, fbData.intData());
       }
-      else {
-        digitalWrite(builtInLed, LOW);
+
+      if (intData != fbData.intData()) {      
+        json.add("gpio0", fbData.intData());
+        Firebase.RTDB.updateNode(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/", &json);
       }
+      
+      intData = fbData.intData();
     }
   }
+  else {
+    Serial.printf("Stream error %s\n\n", fbData.errorReason().c_str());
+  }
+}
+
+void loop() {
+  firebaseStream();
 }
