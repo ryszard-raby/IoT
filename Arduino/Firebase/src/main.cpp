@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <Firebase_ESP_Client.h>
 
+
 // Provide the token generation process info.
 #include <addons/TokenHelper.h>
 
@@ -16,8 +17,6 @@ FirebaseData fbData;
 FirebaseAuth fbAuth;
 FirebaseConfig fbConfig;
 
-FirebaseJson json;
-
 unsigned long dataMillis = 0;
 int cout = 0;
 uint8_t builtInLed = 2;
@@ -25,7 +24,6 @@ uint8_t builtInLed = 2;
 std::string userid = USERID;
 std::string projectid = PROJECTID;
 std::string deviceid = DEVICEID;
-std::string gpio = "gpio2";
 
 int intData;
 
@@ -63,7 +61,7 @@ void connectFirebase() {
 
   Firebase.reconnectWiFi(true);
 
-  std::string path = "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/" + gpio;
+  std::string path = "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/";
 
   if (!Firebase.RTDB.beginStream(&fbData, path))
       Serial.printf("Stream begin error %s\n\n", fbData.errorReason().c_str());
@@ -91,17 +89,26 @@ void firebaseStream() {
         fbData.dataType().c_str(),
         fbData.eventType().c_str(),
         fbData.intData());
+        
+      // Serial.printf("Stream data: %s\n\n", fbData.jsonString().c_str());
 
-      if (fbData.dataType() == "int") {
-        analogWrite(builtInLed, fbData.intData());
+      if (fbData.dataType() == "json") {
+        FirebaseJson *json = fbData.jsonObjectPtr();
+        String jsonStr;
+        json->toString(jsonStr, true);
+        Serial.println(jsonStr);
+        size_t len = json->iteratorBegin();
+        String key, value = "";
+        int type = 0;
+        for (size_t i = 0; i < len; i++) {
+          json->iteratorGet(i, type, key, value);
+          Serial.printf("key: %s, value: %s, type: %s\n", 
+            key.c_str(), 
+            value.c_str(), 
+            type == FirebaseJson::JSON_OBJECT ? "object" : "array"
+            );
+        }
       }
-
-      if (intData != fbData.intData()) {      
-        json.add("gpio0", fbData.intData());
-        Firebase.RTDB.updateNode(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/", &json);
-      }
-      
-      intData = fbData.intData();
     }
   }
   else {
