@@ -21,11 +21,11 @@ public :
     }
 
     void setTimestamp() {
-        Firebase.RTDB.setTimestamp(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/time/");
+        Firebase.RTDB.setTimestamp(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
     }
 
     String getTimestamp() {
-        Firebase.RTDB.get(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/time/");
+        Firebase.RTDB.get(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
         return fbData.stringData();
     }
 
@@ -62,12 +62,12 @@ public :
             if (fbData.streamTimeout())
             Serial.printf("Stream timeout, resuming...\n");
             if (fbData.streamAvailable()) {
-                Serial.printf("Stream path: %s\nevent path: %s\ndata type: %s\nevent type: %s\nvalue: %d\n\n",
-                    fbData.streamPath().c_str(),
-                    fbData.dataPath().c_str(),
-                    fbData.dataType().c_str(),
-                    fbData.eventType().c_str(),
-                    fbData.intData());
+                // Serial.printf("Stream path: %s\nevent path: %s\ndata type: %s\nevent type: %s\nvalue: %d\n\n",
+                //     fbData.streamPath().c_str(),
+                //     fbData.dataPath().c_str(),
+                //     fbData.dataType().c_str(),
+                //     fbData.eventType().c_str(),
+                //     fbData.intData());
                     
                 // Serial.printf("Stream data: %s\n\n", fbData.jsonString().c_str());
 
@@ -75,17 +75,17 @@ public :
                     FirebaseJson *json = fbData.jsonObjectPtr();
                     String jsonStr;
                     json->toString(jsonStr, true);
-                    Serial.println(jsonStr);
+                    // Serial.println(jsonStr);
                     size_t len = json->iteratorBegin();
                     String key, value = "";
                     int type = 0;
                     for (size_t i = 0; i < len; i++) {
                         json->iteratorGet(i, type, key, value);
-                        Serial.printf("key: %s, value: %s, type: %s\n", 
-                            key.c_str(), 
-                            value.c_str(), 
-                            type == FirebaseJson::JSON_OBJECT ? "object" : "array"
-                            );
+                        // Serial.printf("key: %s, value: %s, type: %s\n", 
+                        //     key.c_str(), 
+                        //     value.c_str(), 
+                        //     type == FirebaseJson::JSON_OBJECT ? "object" : "array"
+                        //     );
                         if (callback) {
                             callback(key.c_str(), value.c_str());
                         }
