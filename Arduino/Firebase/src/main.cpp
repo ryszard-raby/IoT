@@ -9,6 +9,7 @@
 #include <DateTime.h>
 #include <time.h>
 #include <cstdlib>
+#include <iostream>
 
 #include <C:/auth.h>
 
@@ -18,10 +19,14 @@ int cout = 0;
 uint8_t builtInLed = 2;
 
 int intData;
-long long int currentTime;
 long long int serverTime;
+unsigned long liveTime;
 
 FirebaseService firebaseService;
+
+int interval = 0;
+int brightness = 0;
+
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -59,16 +64,21 @@ void callback(String key, String value) {
 
   if (key == "time") {
     serverTime = std::stoll(value.c_str());
-    currentTime = serverTime - millis();
-    DateTime dateTime = fullDate(currentTime + millis());
+  }
 
-    Serial.println("Current time: " + String(dateTime.year) + "-" + String(dateTime.month) + "-" + String(dateTime.day) + " " + String(dateTime.hour) + ":" + String(dateTime.minute) + ":" + String(dateTime.second));
+  if (key == "interval") {
+    intData = std::stoi(value.c_str());
+    interval = intData;
   }
 
   if (key == "gpio2") {
     intData = std::stoi(value.c_str());
-    digitalWrite(builtInLed, intData);
-    Serial.println("Pin2: " + String(value));
+    analogWrite(builtInLed, brightness);
+  }
+
+  if (key == "brightness") {
+    intData = std::stoi(value.c_str());
+    brightness = intData;
   }
 }
 
@@ -83,14 +93,17 @@ void setup() {
     callback(key, value);
   });
   firebaseService.setTimestamp();
+
+  liveTime = millis();
 }
 
 void loop() {
   firebaseService.firebaseStream();
-  
-  if (millis() - secTemp > 60000) {
+  DateTime currentTime = fullDate(serverTime + millis() - liveTime);
+
+  if (millis() - liveTime > 60000) {
     firebaseService.setTimestamp();
-    secTemp = millis();
-    // Serial.println("Live time: " + fullDate(millis()));
+    liveTime = millis();
+    Serial.println(String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second));
   }
 }

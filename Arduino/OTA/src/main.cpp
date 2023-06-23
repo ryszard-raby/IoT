@@ -1,92 +1,82 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
-#include <WiFiUdp.h>
+/*
+
+ This example polls for sketch updates over WiFi module on Serial1.
+
+ created 13 July 2010
+ by dlf (Metodo2 srl)
+ modified 31 May 2012
+ by Tom Igoe
+ modified 16 January 2017
+ by Sandeep Mistry
+ Serial WiFi version December 2019
+ by Juraj Andrassy
+ */
+
+#include <WiFiEspAT.h>
 #include <ArduinoOTA.h>
+#include <SoftwareSerial.h>
 
-#include <C:/auth/auth.h>
-
-// Your WiFi credentials.
-// Set password to "" for open networks.
-char ssid[] = AuthSsid;
-char pass[] = AuthPass;
+// Emulate Serial1 on pins 6/7 if not present
+#if defined(ARDUINO_ARCH_AVR) && !defined(HAVE_HWSERIAL1)
+#include <SoftwareSerial.h>
+SoftwareSerial Serial1(6, 7); // RX, TX
+#define AT_BAUD_RATE 9600
+#else
+#define AT_BAUD_RATE 115200
+#endif
 
 void setup() {
+
   Serial.begin(115200);
-  Serial.println("Booting");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
+  while (!Serial);
+
+  // initialize Serial1 for communication with the WiFi module
+  Serial1.begin(115200);
+  WiFi.init(&Serial1);
+
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println();
+    Serial.println("Communication with WiFi module failed!");
+    // don't continue
+    while (true);
   }
 
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
+  // waiting for connection to Wifi network with settings in the WiFi module
+  Serial.println("Waiting for connection to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print('.');
+  }
+  Serial.println();
+  Serial.println("Connected to WiFi network.");
 
-  // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname("myesp8266");
+  // start the WiFi OTA library with internal (flash) based storage
+  ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", InternalStorage);
 
-  // No authentication by default
-  ArduinoOTA.setPassword("admin");
-
-  // Password can be set with it's md5 value as well
-  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
-  ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { // U_SPIFFS
-      type = "filesystem";
-    }
-
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
-  ArduinoOTA.begin();
-  Serial.println("Ready");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  // program setup
-
-  pinMode(12, OUTPUT);
-}
-
-void program(){
-  digitalWrite(12, LOW);
-
-  delay(5000);
-  digitalWrite(12, HIGH);
-
-  delay(100);
+  // you're connected now, so print out the status:
+  printWifiStatus();
 }
 
 void loop() {
-  ArduinoOTA.handle();
-  program();
+  // check for WiFi OTA updates
+  ArduinoOTA.poll();
+
+  // add your normal loop code below ...
 }
 
+void printWifiStatus() {
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
 
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+}
