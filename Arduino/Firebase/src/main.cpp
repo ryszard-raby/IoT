@@ -10,23 +10,26 @@
 #include <time.h>
 #include <cstdlib>
 #include <iostream>
+#include <Timer.h>
 
-#include <C:/auth.h>
+#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
 
-unsigned long secTemp = 0;
-unsigned long minTemp = 0;
-int cout = 0;
 uint8_t builtInLed = 2;
 
-int intData;
-long long int serverTime;
-unsigned long liveTime;
+long long int serverTime = 0;
+unsigned long liveTime = 0;
 
 FirebaseService firebaseService;
+DateTime currentTime = DateTime(0, 0, 0, 0, 0, 0);
 
-int interval = 0;
-int brightness = 0;
+int morning_start, evening_start, morning_power, evening_power;
+int secondTemp = 0;
 
+const int timersCount = 2;
+Timer timer[timersCount];
+
+const int pinsCount = 3;
+int pin[pinsCount] = {4, 5, 12};
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -42,13 +45,6 @@ void connectWiFi() {
   Serial.println();
 }
 
-String fullTime(long long int millis) {
-  int seconds = (millis / 1000) % 60;
-  int minutes = (millis / (1000 * 60)) % 60;
-  int hours = (millis / (1000 * 60 * 60)) % 24;
-  return String(hours) + ":" + String(minutes) + ":" + String(seconds) + ":" + String(millis);
-}
-
 DateTime fullDate(long long int millis) {
   time_t t = millis / 1000;
   struct tm *tm = localtime(&t);
@@ -59,26 +55,34 @@ DateTime fullDate(long long int millis) {
   return DateTime(tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
-void callback(String key, String value) {
-  Serial.println("\nCallbackFunction \n Key: " + key + " Value: " + value + "\n");
+void getData(String key, String value) {
+  if (key == "morning") {
+    timer[0].hour = std::stoi(value.c_str());
+    timer[0].done = false;
+  }
+  if (key == "evening") {
+    timer[1].hour = std::stoi(value.c_str());
+    timer[1].done = false;
+  }
+  if (key == "morning-power") {
+    timer[0].value = std::stoi(value.c_str());
+    timer[0].done = false;
+  }
+  if (key == "evening-power") {
+    timer[1].value = std::stoi(value.c_str());
+    timer[1].done = false;
+  }
+  if (key == "gpio2") {
+    analogWrite(builtInLed, 255 - value.toInt());
+  }
 
+  Serial.println(key + " : " + value);
+}
+
+void callback(String key, String value) {
+  getData(key, value);
   if (key == "time") {
     serverTime = std::stoll(value.c_str());
-  }
-
-  if (key == "interval") {
-    intData = std::stoi(value.c_str());
-    interval = intData;
-  }
-
-  if (key == "gpio2") {
-    intData = std::stoi(value.c_str());
-    analogWrite(builtInLed, brightness);
-  }
-
-  if (key == "brightness") {
-    intData = std::stoi(value.c_str());
-    brightness = intData;
   }
 }
 
@@ -86,6 +90,10 @@ void setup() {
   Serial.begin(9600);
 
   pinMode(builtInLed, OUTPUT);
+
+  for (int i = 0; i < pinsCount; i++) {
+    pinMode(pin[i], OUTPUT);
+  }
 
   connectWiFi();
   firebaseService.connectFirebase();
@@ -97,13 +105,33 @@ void setup() {
   liveTime = millis();
 }
 
+void setPinValue(int value) {
+  for (int i = 0; i < pinsCount; i++) {
+    analogWrite(pin[i], value);
+  }
+}
+
 void loop() {
   firebaseService.firebaseStream();
-  DateTime currentTime = fullDate(serverTime + millis() - liveTime);
+  currentTime = fullDate(serverTime + millis() - liveTime);
 
-  if (millis() - liveTime > 60000) {
+  if (millis() - liveTime > 600000) {
     firebaseService.setTimestamp();
     liveTime = millis();
     Serial.println(String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second));
+  }
+
+  for(int i = 0; i < timersCount; i++) {
+    if (currentTime.hour >= timer[i].hour) {
+      if (!timer[i].done) {
+        if (i == 0) {
+          setPinValue(timer[i].value);
+        }
+        if (i == 1) {
+          setPinValue(timer[i].value);
+        }
+      }
+      timer[i].done = true;
+    }
   }
 }
