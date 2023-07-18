@@ -124,12 +124,7 @@ void loop() {
   for(int i = 0; i < timersCount; i++) {
     if (currentTime.hour >= timer[i].hour) {
       if (!timer[i].done) {
-        if (i == 0) {
-          setPinValue(timer[i].value);
-        }
-        if (i == 1) {
-          setPinValue(timer[i].value);
-        }
+        setPinValue(timer[i].value);
       }
       timer[i].done = true;
     }

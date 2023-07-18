@@ -1,6 +1,6 @@
 #include <Firebase_ESP_Client.h>
 #include <addons/TokenHelper.h>
-#include <C:/auth.h>
+#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
 
 FirebaseData fbData;
 FirebaseAuth fbAuth;
@@ -21,11 +21,11 @@ public :
     }
 
     void setTimestamp() {
-        Firebase.RTDB.setTimestamp(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
+        Firebase.RTDB.setTimestamp(&fbData, "projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
     }
 
     String getTimestamp() {
-        Firebase.RTDB.get(&fbData, "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
+        Firebase.RTDB.get(&fbData, "projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
         return fbData.stringData();
     }
 
@@ -49,7 +49,7 @@ public :
 
         Firebase.reconnectWiFi(true);
 
-        std::string path = "usersData/" + userid + "/projects/" + projectid + "/devices/" + deviceid + "/pins/";
+        std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
 
         if (!Firebase.RTDB.beginStream(&fbData, path))
             Serial.printf("Stream begin error %s\n\n", fbData.errorReason().c_str());
