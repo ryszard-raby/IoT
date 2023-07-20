@@ -13,12 +13,13 @@
 #include <Timer.h>
 #include <TimerObserver.h>
 
-#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+#include <C:/Users/rysza/OneDrive/auth/auth.h>
 
 uint8_t builtInLed = 2;
 
 long long int serverTime = 0;
 unsigned long liveTime = 0;
+long long int currentTimeMillis = 0;
 
 FirebaseService firebaseService;
 DateTime currentTime = DateTime(0, 0, 0, 0, 0, 0);
@@ -32,7 +33,9 @@ TimerObserver timerObserver;
 bool synchro = false;
 
 const int pinsCount = 1;
-int pin[pinsCount] = {4};
+int pin[pinsCount] = {5};
+
+int activeTimersCount_temp = 0;
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -181,9 +184,17 @@ void setPinValue(int value) {
 void itsTime() {
   if (timerObserver.activeTimersCount > 0) {
     setPinValue(255);
+    
+    if (activeTimersCount_temp != timerObserver.activeTimersCount) {
+      String log = String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second) + " | " + String(currentTime.day) + "." + String(currentTime.month) + "." + String(currentTime.year) + " | " + String(interval) + " min" + " | " + String(timerObserver.activeTimersCount) + " timer";
+      firebaseService.setPinString("log", log.c_str());
+    }
+
+    activeTimersCount_temp = timerObserver.activeTimersCount;
   }
   else {
     setPinValue(0);
+    activeTimersCount_temp = timerObserver.activeTimersCount;
   }
 }
 
@@ -194,7 +205,7 @@ void checkTimer(int i) {
     {
       timerObserver.count(true);
     }
-    else {
+    else if (timer[i].hour_end <= currentTime.hour && timer[i].min_end <= currentTime.minute) {
       timerObserver.count(false);
 
       if (timer[i].name == "custom") {
@@ -212,6 +223,7 @@ int seconds_temp = 0;
 void loop() {
   firebaseService.firebaseStream();
   currentTime = fullDate(serverTime + millis() - liveTime);
+  currentTimeMillis = serverTime + millis() - liveTime;
 
   if (millis() - liveTime > 600000) {
     firebaseService.setTimestamp();

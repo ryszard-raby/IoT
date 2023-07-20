@@ -1,6 +1,6 @@
 #include <Firebase_ESP_Client.h>
 #include <addons/TokenHelper.h>
-#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+#include <C:/Users/rysza/OneDrive/auth/auth.h>
 
 FirebaseData fbData;
 FirebaseAuth fbAuth;
@@ -27,6 +27,11 @@ public :
     void setPin(std::string pin, int value) {
         std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
         Firebase.RTDB.setInt(&fbData, path + pin, value);
+    }
+
+    void setPinString(std::string pin, std::string value) {
+        std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
+        Firebase.RTDB.setString(&fbData, path + pin, value);
     }
 
     String getTimestamp() {
