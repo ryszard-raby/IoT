@@ -12,30 +12,33 @@
 #include <iostream>
 #include <Timer.h>
 #include <TimerObserver.h>
+#include <chrono>
+#include <TimeLib.h>
+#include <ctime>
 
 #include <C:/Users/rysza/OneDrive/auth/auth.h>
 
 uint8_t builtInLed = 2;
 
-long long int serverTime = 0;
-unsigned long liveTime = 0;
-long long int currentTimeMillis = 0;
-
 FirebaseService firebaseService;
-DateTime currentTime = DateTime(0, 0, 0, 0, 0, 0);
 
-int interval = 0;
+int millis_temp = 0;
+long long serverTime = 0;
+long long liveTime = 0;
+std::time_t currentTime;
 
+const int pinsCount = 1;
+int pin[pinsCount] = {5};
 const int timersCount = 3;
 Timer timer[timersCount];
 TimerObserver timerObserver;
 
-bool synchro = false;
-
-const int pinsCount = 1;
-int pin[pinsCount] = {5};
-
+int interval = 1000;
 int activeTimersCount_temp = 0;
+int seconds_temp = 0;
+bool state_temp = false;
+
+void setCurrentTime(long long serverTime);
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -51,55 +54,28 @@ void connectWiFi() {
   Serial.println();
 }
 
-DateTime fullDate(long long int millis) {
-  time_t t = millis / 1000;
-  struct tm *tm = localtime(&t);
-  tm->tm_hour += 2;
-  time_t t2 = mktime(tm);
-  tm = localtime(&t2);
-
-  return DateTime(tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
-}
-
-void printTimersValues(int i) {
-  Serial.println("timer" + String(i) + ": " + String(timer[i].hour_start) + ":" + String(timer[i].min_start) + " - " + String(timer[i].hour_end) + ":" + String(timer[i].min_end));
-}
-
 void getData(String key, String value) {
   if (key == "timer1") {
-    timer[0].hour_start = std::stoi(value.c_str());
-    timer[0].hour_end = std::stoi(value.c_str());
-    timer[0].min_start = 0;
-    timer[0].min_end = interval;
-    printTimersValues(0);
+    timer[0].hour = std::stoll(value.c_str());
+    timer[0].minute = 0;
   }
 
   if (key == "timer2") {
-    timer[1].hour_start = std::stoi(value.c_str());
-    timer[1].hour_end = std::stoi(value.c_str());
-    timer[1].min_start = 0;
-    timer[1].min_end = interval;
-    printTimersValues(1);
+    timer[1].hour = std::stoll(value.c_str());
+    timer[1].minute = 0;
   }
 
-  if (key == "custom") {
-    if (std::stoi(value.c_str())) {
-      timer[2].name = "custom";
-      timer[2].hour_start = currentTime.hour;
-      timer[2].hour_end = currentTime.hour;
-      timer[2].min_start = currentTime.minute;
-      timer[2].min_end = currentTime.minute + interval;
-      timer[2].active = true;
-      if (timer[2].min_end >= 60) {
-        timer[2].hour_end = currentTime.hour + 1;
-        timer[2].min_end = timer[2].min_end - 60;
-      }
-      }
-    else {
-      timer[2].active = false;
-    }
-    printTimersValues(2);
-  }
+  // if (key == "custom") {
+  //   if (std::stoi(value.c_str())) {
+  //     timer[2].name = "custom";
+  //     timer[2].hour = currentTime->tm_hour;
+  //     timer[2].minute = currentTime->tm_min;
+  //     timer[2].active = true;
+  //   }
+  //   else {
+  //     timer[2].active = false;
+  //   }
+  // }
   
   if (key == "timer1-activate") {
     if (std::stoi(value.c_str())) {
@@ -121,23 +97,6 @@ void getData(String key, String value) {
 
   if (key == "interval") {
     interval = std::stoi(value.c_str());
-
-    timer[0].min_end = interval;
-    timer[1].min_end = interval;
-
-    timer[2].hour_start = currentTime.hour;
-    timer[2].hour_end = currentTime.hour;
-    timer[2].min_start = currentTime.minute;
-    timer[2].min_end = currentTime.minute + interval;
-
-    if (timer[2].min_end >= 60) {
-      timer[2].hour_end = currentTime.hour + 1;
-      timer[2].min_end -= 60;
-    }
-
-    for (int i = 0; i < timersCount; i++) {
-      printTimersValues(i);
-    }
   }
 
   if (key == "gpio2") {
@@ -151,6 +110,9 @@ void callback(String key, String value) {
   getData(key, value);
   if (key == "time") {
     serverTime = std::stoll(value.c_str());
+    liveTime = millis();
+    // setCurrentTime(serverTime);
+    // Serial.println("Server time: " + String(serverTime));
   }
 }
 
@@ -168,8 +130,8 @@ void setup() {
   firebaseService.setCallback([](String key, String value) {
     callback(key, value);
   });
-  firebaseService.setTimestamp();
 
+  firebaseService.setTimestamp();
   liveTime = millis();
 }
 
@@ -181,67 +143,67 @@ void setPinValue(int value) {
   digitalWrite(builtInLed, 255 - value);
 }
 
-void itsTime() {
-  if (timerObserver.activeTimersCount > 0) {
-    setPinValue(255);
-    
-    if (activeTimersCount_temp != timerObserver.activeTimersCount) {
-      String log = String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second) + " | " + String(currentTime.day) + "." + String(currentTime.month) + "." + String(currentTime.year) + " | " + String(interval) + " min" + " | " + String(timerObserver.activeTimersCount) + " timer";
-      firebaseService.setPinString("log", log.c_str());
-    }
+std::chrono::system_clock::time_point synchro(std::chrono::system_clock::time_point currentTimePoint) {
+  using namespace std::chrono;
 
-    activeTimersCount_temp = timerObserver.activeTimersCount;
+  auto currentTime = std::chrono::system_clock::to_time_t(currentTimePoint);
+
+  // UTC+1
+  currentTimePoint += hours(1);
+
+  // spring time
+  if (month(currentTime) > 3 && month(currentTime) < 10) {
+    currentTimePoint += hours(1);
   }
-  else {
-    setPinValue(0);
-    activeTimersCount_temp = timerObserver.activeTimersCount;
-  }
+
+  // server delay
+  currentTimePoint += seconds(2);
+
+  return currentTimePoint;
 }
 
-void checkTimer(int i) {
-  if (timer[i].active) {
-    if ((timer[i].hour_start <= currentTime.hour && timer[i].min_start <= currentTime.minute)
-    && (timer[i].hour_end >= currentTime.hour && timer[i].min_end > currentTime.minute))
-    {
-      timerObserver.count(true);
-    }
-    else if (timer[i].hour_end <= currentTime.hour && timer[i].min_end <= currentTime.minute) {
-      timerObserver.count(false);
+std::chrono::system_clock::time_point getCurrentTime(long long serverTime) {
+  using namespace std::chrono;
 
-      if (timer[i].name == "custom") {
-        timer[i].active = false;
-        firebaseService.setPin("custom", 0);
-        firebaseService.setTimestamp();
-        liveTime = millis();
-      }
-    }
-  }
+  auto now = system_clock::now();
+  auto time = system_clock::to_time_t(now);
+
+  time += serverTime / 1000;
+  time -= liveTime / 1000;
+
+  auto lt = localtime(&time);
+  auto timePoint = system_clock::from_time_t(mktime(lt));
+
+  return timePoint;
 }
-
-int seconds_temp = 0;
 
 void loop() {
   firebaseService.firebaseStream();
-  currentTime = fullDate(serverTime + millis() - liveTime);
-  currentTimeMillis = serverTime + millis() - liveTime;
 
-  if (millis() - liveTime > 600000) {
+  std::chrono::system_clock::time_point currentTimePoint;
+  currentTimePoint = getCurrentTime(serverTime);
+  currentTimePoint = synchro(currentTimePoint);
+
+  currentTime = std::chrono::system_clock::to_time_t(currentTimePoint);
+
+  if (second(currentTime) != seconds_temp) {
+    seconds_temp = second(currentTime);
+    Serial.println(String(hour(currentTime)) + ":" + String(minute(currentTime)) + ":" + String(second(currentTime)) + " " + String(day(currentTime)) + "." + String(month(currentTime)) + "." + String(year(currentTime)));
+  }
+
+  // bool state = setTimePoint(serverTime, timer[0], interval) || setTimePoint(serverTime, timer[1], interval) || setTimePoint(serverTime, timer[2], interval);
+
+  if (millis() - millis_temp > 60000 * 60) {
+    millis_temp = millis();
     firebaseService.setTimestamp();
-    liveTime = millis();
-    Serial.println(String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second));
   }
 
-  // check all timers
-  timerObserver.activeTimersCount = 0;
-  for (int i = 0; i < timersCount; i++) {
-    checkTimer(i);
-  }
+  // if (state != state_temp) {
+  //   state_temp = state;
 
-  itsTime();
+  //   setPinValue(state * 255);
 
-  // if (currentTime.second != seconds_temp) {
-  //   seconds_temp = currentTime.second;
-  //   Serial.println(String(currentTime.hour) + ":" + String(currentTime.minute) + ":" + String(currentTime.second));
+  //   Serial.println(state);
   // }
 }
 

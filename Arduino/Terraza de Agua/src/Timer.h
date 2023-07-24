@@ -2,10 +2,8 @@ class Timer
 {
     public:
     std::string name;
-    int hour_start;
-    int hour_end;
-    int min_start;
-    int min_end;
+    int hour;
+    int minute;
     bool active;
     bool itsTime;
 
@@ -17,10 +15,8 @@ class Timer
 
     Timer() {
         this->name = "timer";
-        this->hour_start = 0;
-        this->hour_end = 0;
-        this->min_start = 0;
-        this->min_end = 0;
+        this->hour = 0;
+        this->minute = 0;
         this->active = false;
         this->itsTime = false;
     }
