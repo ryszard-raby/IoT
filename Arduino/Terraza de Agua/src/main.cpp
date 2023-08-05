@@ -32,6 +32,7 @@ int pin[pinsCount] = {5};
 const int timersCount = 3;
 Timer timer[timersCount];
 TimerObserver timerObserver;
+std::chrono::system_clock::time_point currentTimePoint;
 
 int interval = 1000;
 int activeTimersCount_temp = 0;
@@ -39,6 +40,7 @@ int seconds_temp = 0;
 bool state_temp = false;
 
 void setCurrentTime(long long serverTime);
+std::chrono::system_clock::time_point setTimePoint(Timer timer, auto currentTimePoint);
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -55,9 +57,15 @@ void connectWiFi() {
 }
 
 void getData(String key, String value) {
+  using namespace std::chrono;
+
   if (key == "timer1") {
     timer[0].hour = std::stoll(value.c_str());
     timer[0].minute = 0;
+    timer[0].timePoint = setTimePoint(timer[0], currentTimePoint);
+    std::time_t timerTimePoint;
+    timerTimePoint = std::chrono::system_clock::to_time_t(timer[0].timePoint);
+    Serial.println("Timer 1 timepoint " + String(hour(timerTimePoint)));
   }
 
   if (key == "timer2") {
@@ -143,6 +151,7 @@ void setPinValue(int value) {
   digitalWrite(builtInLed, 255 - value);
 }
 
+// add UTC+1, summer time and server delay to current time
 std::chrono::system_clock::time_point synchro(std::chrono::system_clock::time_point currentTimePoint) {
   using namespace std::chrono;
 
@@ -162,6 +171,7 @@ std::chrono::system_clock::time_point synchro(std::chrono::system_clock::time_po
   return currentTimePoint;
 }
 
+// set current time as time_poin from server time
 std::chrono::system_clock::time_point getCurrentTime(long long serverTime) {
   using namespace std::chrono;
 
@@ -177,10 +187,28 @@ std::chrono::system_clock::time_point getCurrentTime(long long serverTime) {
   return timePoint;
 }
 
+// set time point from timer to check if it is time to turn on/off. Example: timer[0].timePoint = 12:00, set timepoint to 12:00:00 today. currenTimePoint could be any hour of day
+std::chrono::system_clock::time_point setTimePoint(Timer timer, auto currentTimePoint) {
+  using namespace std::chrono;
+
+  auto dayStart = currentTimePoint;
+
+  // std::time_t cT = std::chrono::system_clock::to_time_t(currentTimePoint);
+  
+  // dayStart -= hours(cT);
+  // dayStart -= minutes(cT);
+  // dayStart -= seconds(cT);
+
+  auto timePoint = dayStart + hours(timer.hour) + minutes(timer.minute);
+
+  return timePoint;
+}
+
 void loop() {
+  using namespace std::chrono;
+
   firebaseService.firebaseStream();
 
-  std::chrono::system_clock::time_point currentTimePoint;
   currentTimePoint = getCurrentTime(serverTime);
   currentTimePoint = synchro(currentTimePoint);
 
@@ -206,4 +234,3 @@ void loop() {
   //   Serial.println(state);
   // }
 }
-
