@@ -9,8 +9,8 @@ FirebaseConfig fbConfig;
 class FirebaseService {
 
     std::string userid = USERID;
-    std::string projectid = PROJECTID__TERRAZA_DE_AQUA;
-    std::string deviceid = DEVICEID__TERRAZA_DE_AQUA;
+    std::string projectid = PROJECTID__BANO;
+    std::string deviceid = DEVICEID__BANO;
 
 public : 
 

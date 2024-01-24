@@ -29,7 +29,7 @@ const int timersCount = 2;
 Timer timer[timersCount];
 
 const int pinsCount = 3;
-int pin[pinsCount] = {4, 5, 12};
+int pin[pinsCount] = ;
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);

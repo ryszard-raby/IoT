@@ -9,13 +9,7 @@ class Timer
     int minute;
     bool active;
     bool itsTime;
-    std::chrono::system_clock::time_point timePoint;
-
-    // Timer(int hour, int value) {
-    //     this->hour = hour;
-    //     this->value = value;
-    //     this->done = false;
-    // }
+    system_clock::time_point timePoint;
 
     Timer() {
         this->name = "timer";

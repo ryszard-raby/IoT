@@ -16,7 +16,9 @@
 #include <TimeLib.h>
 #include <ctime>
 
-#include <C:/Users/rysza/OneDrive/auth/auth.h>
+#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+
+using namespace std::chrono;
 
 uint8_t builtInLed = 2;
 
@@ -32,15 +34,17 @@ int pin[pinsCount] = {5};
 const int timersCount = 3;
 Timer timer[timersCount];
 TimerObserver timerObserver;
-std::chrono::system_clock::time_point currentTimePoint;
+system_clock::time_point currentTimePoint;
+system_clock::time_point setTimePoint(Timer timer, system_clock::time_point currentTimePoint);
+void setPinValue(int value);
 
 int interval = 1000;
 int activeTimersCount_temp = 0;
 int seconds_temp = 0;
 bool state_temp = false;
+bool refresh = true; 
 
 void setCurrentTime(long long serverTime);
-std::chrono::system_clock::time_point setTimePoint(Timer timer, auto currentTimePoint);
 
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -64,26 +68,34 @@ void getData(String key, String value) {
     timer[0].minute = 0;
     timer[0].timePoint = setTimePoint(timer[0], currentTimePoint);
     std::time_t timerTimePoint;
-    timerTimePoint = std::chrono::system_clock::to_time_t(timer[0].timePoint);
-    Serial.println("Timer 1 timepoint " + String(hour(timerTimePoint)));
+    timerTimePoint = system_clock::to_time_t(timer[0].timePoint);
+    Serial.println("timepoint " + String(hour(timerTimePoint)));
   }
 
   if (key == "timer2") {
     timer[1].hour = std::stoll(value.c_str());
     timer[1].minute = 0;
+    timer[1].timePoint = setTimePoint(timer[1], currentTimePoint);
+    std::time_t timerTimePoint;
+    timerTimePoint = system_clock::to_time_t(timer[1].timePoint);
+    Serial.println("timepoint " + String(year(timerTimePoint)));
   }
 
-  // if (key == "custom") {
-  //   if (std::stoi(value.c_str())) {
-  //     timer[2].name = "custom";
-  //     timer[2].hour = currentTime->tm_hour;
-  //     timer[2].minute = currentTime->tm_min;
-  //     timer[2].active = true;
-  //   }
-  //   else {
-  //     timer[2].active = false;
-  //   }
-  // }
+  if (key == "custom") {
+    time_t currentTime = system_clock::to_time_t(currentTimePoint);
+    timer[2].hour = hour(currentTime);
+    timer[2].minute = minute(currentTime);
+    timer[2].timePoint = setTimePoint(timer[2], currentTimePoint);
+    std::time_t timerTimePoint;
+    timerTimePoint = system_clock::to_time_t(timer[2].timePoint);
+    Serial.println("timepoint " + String(hour(timerTimePoint)));
+    if (std::stoi(value.c_str())) {
+      timer[2].active = true;
+    }
+    else {
+      timer[2].active = false;
+    }
+  }
   
   if (key == "timer1-activate") {
     if (std::stoi(value.c_str())) {
@@ -115,13 +127,11 @@ void getData(String key, String value) {
 }
 
 void callback(String key, String value) {
-  getData(key, value);
   if (key == "time") {
     serverTime = std::stoll(value.c_str());
     liveTime = millis();
-    // setCurrentTime(serverTime);
-    // Serial.println("Server time: " + String(serverTime));
   }
+  getData(key, value);
 }
 
 void setup() {
@@ -141,10 +151,13 @@ void setup() {
 
   firebaseService.setTimestamp();
   liveTime = millis();
+
+  setPinValue(0);
 }
 
 // set value to all pins
 void setPinValue(int value) {
+  Serial.println("setPinValue: " + String(value));
   for (int i = 0; i < pinsCount; i++) {
     digitalWrite(pin[i], value);
   }
@@ -152,10 +165,9 @@ void setPinValue(int value) {
 }
 
 // add UTC+1, summer time and server delay to current time
-std::chrono::system_clock::time_point synchro(std::chrono::system_clock::time_point currentTimePoint) {
-  using namespace std::chrono;
-
-  auto currentTime = std::chrono::system_clock::to_time_t(currentTimePoint);
+system_clock::time_point synchro(system_clock::time_point currentTimePoint) {
+  
+  time_t currentTime = system_clock::to_time_t(currentTimePoint);
 
   // UTC+1
   currentTimePoint += hours(1);
@@ -172,36 +184,50 @@ std::chrono::system_clock::time_point synchro(std::chrono::system_clock::time_po
 }
 
 // set current time as time_poin from server time
-std::chrono::system_clock::time_point getCurrentTime(long long serverTime) {
-  using namespace std::chrono;
+system_clock::time_point getCurrentTime(long long serverTime) {
 
-  auto now = system_clock::now();
-  auto time = system_clock::to_time_t(now);
+  system_clock::time_point now = system_clock::now();
+  time_t time = system_clock::to_time_t(now);
 
   time += serverTime / 1000;
   time -= liveTime / 1000;
 
   auto lt = localtime(&time);
-  auto timePoint = system_clock::from_time_t(mktime(lt));
+  system_clock::time_point timePoint = system_clock::from_time_t(mktime(lt));
 
   return timePoint;
 }
 
-// set time point from timer to check if it is time to turn on/off. Example: timer[0].timePoint = 12:00, set timepoint to 12:00:00 today. currenTimePoint could be any hour of day
-std::chrono::system_clock::time_point setTimePoint(Timer timer, auto currentTimePoint) {
-  using namespace std::chrono;
+// set time_point for timer
+system_clock::time_point setTimePoint(Timer timer, system_clock::time_point currentTimePoint) {
 
-  auto dayStart = currentTimePoint;
+  system_clock::time_point hourZero = currentTimePoint;
+  time_t currentTime = system_clock::to_time_t(currentTimePoint);
 
-  // std::time_t cT = std::chrono::system_clock::to_time_t(currentTimePoint);
-  
-  // dayStart -= hours(cT);
-  // dayStart -= minutes(cT);
-  // dayStart -= seconds(cT);
+  hourZero -= hours(hour(currentTime));
+  hourZero -= minutes(minute(currentTime));
+  hourZero -= seconds(second(currentTime));
 
-  auto timePoint = dayStart + hours(timer.hour) + minutes(timer.minute);
+  system_clock::time_point timePoint = hourZero + hours(timer.hour) + minutes(timer.minute);
 
   return timePoint;
+}
+
+system_clock::time_point setIntervalTimePoint(Timer timer) {
+  system_clock::time_point intervalTimePoint = timer.timePoint + minutes(interval);
+  return intervalTimePoint;
+}
+
+bool itsTime(system_clock::time_point currentTimePoint, Timer timer) {
+
+  system_clock::time_point intervalTimePoint = setIntervalTimePoint(timer);
+
+  if (timer.active && currentTimePoint >= timer.timePoint && currentTimePoint < intervalTimePoint) {
+    return true;
+  }
+  else {
+    return false;
+  }
 }
 
 void loop() {
@@ -212,25 +238,27 @@ void loop() {
   currentTimePoint = getCurrentTime(serverTime);
   currentTimePoint = synchro(currentTimePoint);
 
-  currentTime = std::chrono::system_clock::to_time_t(currentTimePoint);
+  currentTime = system_clock::to_time_t(currentTimePoint);
 
   if (second(currentTime) != seconds_temp) {
     seconds_temp = second(currentTime);
     Serial.println(String(hour(currentTime)) + ":" + String(minute(currentTime)) + ":" + String(second(currentTime)) + " " + String(day(currentTime)) + "." + String(month(currentTime)) + "." + String(year(currentTime)));
   }
 
-  // bool state = setTimePoint(serverTime, timer[0], interval) || setTimePoint(serverTime, timer[1], interval) || setTimePoint(serverTime, timer[2], interval);
-
   if (millis() - millis_temp > 60000 * 60) {
     millis_temp = millis();
     firebaseService.setTimestamp();
   }
 
-  // if (state != state_temp) {
-  //   state_temp = state;
+  if (millis() - millis_temp > 10000 && refresh) {
+    firebaseService.setTimestamp();
+    refresh = false;
+  }
 
-  //   setPinValue(state * 255);
-
-  //   Serial.println(state);
-  // }
+  bool state = itsTime(currentTimePoint, timer[0]) || itsTime(currentTimePoint, timer[1]) || itsTime(currentTimePoint, timer[2]);
+  
+  if (state != state_temp) {
+    state_temp = state;
+    setPinValue(state * 255);
+  }
 }
