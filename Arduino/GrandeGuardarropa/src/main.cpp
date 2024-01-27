@@ -1,7 +1,10 @@
+#if defined(ESP32)
+#include <WiFi.h>
+#elif defined(ESP8266)
 #include <ESP8266WiFi.h>
+#endif
 
 #include <Arduino.h>
-#include <ArduinoOTA.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
 #include <chrono>
@@ -21,7 +24,8 @@ int power2 = 0;
 int powerNew = 0;
 int powerGlobal = 0;
 
-int led_pin = 16;
+const int pinsCount = 3;
+int pin[pinsCount] = {5, 4, 12};
 
 FirebaseService firebaseService;
 TimeService timeService;
@@ -29,7 +33,6 @@ TimeService timeService;
 system_clock::time_point timeSnapPoint;
 
 void connectWiFi() {
-  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -43,44 +46,37 @@ void connectWiFi() {
   Serial.println();
 }
 
-void ota() {
-  // ArduinoOTA.setHostname("bano");
-  // ArduinoOTA.setPassword("admin");
-  // ArduinoOTA.onStart([]() {
-  //   Serial.println("Start");
-  //   String type;
-  //   if (ArduinoOTA.getCommand() == U_FLASH) {
-  //     type = "sketch";
-  //   } else { // U_SPIFFS
-  //     type = "filesystem";
-  //   }
-  // });
-  ArduinoOTA.begin();
-}
-
 void callback(String key, String value) {
   if (key == "time") {
-    Serial.println(std::stoll(value.c_str()));
     timeSnapPoint = timeService.setTimePoint(std::stoll(value.c_str()));
   }
   if (key == "timer1") {
-    timer1.hour = timeNow.hour;
+    timer1.hour = std::stoi(value.c_str());
     timer1.minute = timeNow.minute;
-    timer1.second = std::stoi(value.c_str());
+    timer1.second = timeNow.second; 
     timer1.active = true;
+    Serial.println("timer1: " + value);
   }
   if (key == "timer2") {
-    timer2.hour = timeNow.hour;
+    timer2.hour = std::stoi(value.c_str());
     timer2.minute = timeNow.minute;
-    timer2.second = std::stoi(value.c_str());
+    timer2.second = timeNow.second;
     timer2.active = true;
+    Serial.println("timer2: " + value);
   }
   if (key == "power1") {
     power1 = std::stoi(value.c_str());
-    analogWrite(led_pin, 255 - power1);
+    timer1.active = true;
+    Serial.println("power1: " + value);
   }
   if (key == "power2") {
     power2 = std::stoi(value.c_str());
+    timer2.active = true;
+    Serial.println("power2: " + value);
+  }
+  if (key == "gpio2") {
+    analogWrite(LED_BUILTIN,255 - std::stoi(value.c_str()));
+    Serial.println("gpio2: " + value);
   }
 }
 
@@ -92,8 +88,7 @@ void trigger(Timer timeNow, Timer &timer, int power) {
 }
 
 void reset(Timer timeNow, Timer &timer) {
-  // if (timeNow.hour == 0 && timeNow.minute == 0 && timeNow.second == 0) {
-  if (timeNow.second == 0) {
+  if (timeNow.hour == 0 && timeNow.minute == 0 && timeNow.second == 0) {
     timer.active = true;
   }
 }
@@ -110,11 +105,8 @@ void increase(int &powerNew) {
 void setup() {
   Serial.begin(9600);
 
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(led_pin, OUTPUT);
 
   connectWiFi();
-  ota();
   
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
@@ -124,17 +116,17 @@ void setup() {
 
   startTime = millis();
 
+  pinMode(LED_BUILTIN, OUTPUT);
+  for (int i = 0; i < pinsCount; i++) {
+    pinMode(pin[i], OUTPUT);
+  }
 }
 
 void loop() {
-  ArduinoOTA.handle();
-
-
   firebaseService.firebaseStream();
   timeNow = timeService.getTimer(millis() - startTime);
 
   if (timeNow.second != t_timeNow.second) {
-    Serial.println(timeNow.second);
     trigger(timeNow, timer1, power1);
     trigger(timeNow, timer2, power2);
     reset(timeNow, timer1);
@@ -144,6 +136,8 @@ void loop() {
   }
 
   increase(powerNew);
-  analogWrite(LED_BUILTIN, powerNew);
 
+  for (int i = 0; i < pinsCount; i++) {
+    analogWrite(pin[i], powerNew);
+  }
 }
