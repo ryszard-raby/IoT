@@ -1,12 +1,12 @@
-#include <ESP8266WiFi.h>
 
 #include <Arduino.h>
-#include <ArduinoOTA.h>
+#include <Ultrasonic.h>
+#include <WiFiService.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
 #include <chrono>
 #include <time.h>
-#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+#include <Oled.h>
 
 int startTime = 0;
 
@@ -14,6 +14,8 @@ Timer timeNow;
 Timer t_timeNow;
 Timer timer1;
 Timer timer2;
+
+Oled oled;
 
 int power1 = 0;
 int power2 = 0;
@@ -23,40 +25,13 @@ int powerGlobal = 0;
 
 int led_pin = 16;
 
+Ultrasonic ultrasonic(0, 4); // (Trig PIN, Echo PIN)
+
+WiFiService wifiService;
 FirebaseService firebaseService;
 TimeService timeService;
 
 system_clock::time_point timeSnapPoint;
-
-void connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println(".......");
-  Serial.println("Connected with IP:");
-  Serial.println(WiFi.localIP());
-  Serial.println();
-}
-
-void ota() {
-  // ArduinoOTA.setHostname("bano");
-  // ArduinoOTA.setPassword("admin");
-  // ArduinoOTA.onStart([]() {
-  //   Serial.println("Start");
-  //   String type;
-  //   if (ArduinoOTA.getCommand() == U_FLASH) {
-  //     type = "sketch";
-  //   } else { // U_SPIFFS
-  //     type = "filesystem";
-  //   }
-  // });
-  ArduinoOTA.begin();
-}
 
 void callback(String key, String value) {
   if (key == "time") {
@@ -77,10 +52,15 @@ void callback(String key, String value) {
   }
   if (key == "power1") {
     power1 = std::stoi(value.c_str());
-    analogWrite(led_pin, 255 - power1);
+    timer1.active = true;
+    oled.stack[1].text = String(value.c_str());
+    oled.print();
   }
   if (key == "power2") {
     power2 = std::stoi(value.c_str());
+    timer2.active = true;
+    oled.stack[2].text = String(value.c_str());
+    oled.print();
   }
 }
 
@@ -99,22 +79,38 @@ void reset(Timer timeNow, Timer &timer) {
 }
 
 void increase(int &powerNew) {
+
   if (powerNew < powerGlobal) {
     powerNew++;
   }
   if (powerNew > powerGlobal) {
     powerNew--;
   }
+  
+  oled.stack[3].text = String(powerNew);
+  if (powerNew != powerGlobal) {
+    oled.print();
+  }
+}
+
+void distance() {
+  int distance = ultrasonic.read(40000UL);
+  Serial.println(distance);
 }
 
 void setup() {
   Serial.begin(9600);
 
+  oled.init();
+  oled.add(0, 0, "time", 2);
+  oled.add(0, 25, "power1", 1);
+  oled.add(30, 25, "power2", 1);
+  oled.add(0, 40, "increase", 2);
+
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(led_pin, OUTPUT);
 
-  connectWiFi();
-  ota();
+  wifiService.connect();
   
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
@@ -123,27 +119,31 @@ void setup() {
   firebaseService.setTimestamp();
 
   startTime = millis();
-
 }
 
 void loop() {
-  ArduinoOTA.handle();
-
-
   firebaseService.firebaseStream();
   timeNow = timeService.getTimer(millis() - startTime);
 
   if (timeNow.second != t_timeNow.second) {
-    Serial.println(timeNow.second);
+    // Serial.println(timeNow.second);
+
+    String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
+
+    oled.stack[0].text = formattedTime;
+    oled.print();
+    
     trigger(timeNow, timer1, power1);
     trigger(timeNow, timer2, power2);
     reset(timeNow, timer1);
     reset(timeNow, timer2);
     
     t_timeNow = timeNow;
+
+    // distance();
   }
 
   increase(powerNew);
-  analogWrite(LED_BUILTIN, powerNew);
-
+  analogWrite(led_pin, powerNew);
+  
 }

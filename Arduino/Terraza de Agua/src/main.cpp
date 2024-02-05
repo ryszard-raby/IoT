@@ -18,6 +18,19 @@
 
 #include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
 
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+#define OLED_RESET    -1  // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C // Adres I2C wyświetlacza, możesz sprawdzić go za pomocą narzędzi diagnostycznych I2C
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
 using namespace std::chrono;
 
 uint8_t builtInLed = 2;
@@ -58,6 +71,10 @@ void connectWiFi() {
   Serial.println("Connected with IP:");
   Serial.println(WiFi.localIP());
   Serial.println();
+}
+
+void oled() {
+
 }
 
 void getData(String key, String value) {
