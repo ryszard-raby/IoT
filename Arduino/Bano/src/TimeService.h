@@ -40,6 +40,8 @@ class TimeService {
         Timer.hour = lt->tm_hour;
         Timer.minute = lt->tm_min;
         Timer.second = lt->tm_sec;
+        Timer.millisecond = liveTime % 1000;
+        Timer.millisecond = (liveTime % 1000) / 100 * 100;
         return Timer;
     }
 };

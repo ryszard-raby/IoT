@@ -22,8 +22,17 @@ int power2 = 0;
 
 int powerNew = 0;
 int powerGlobal = 0;
+int powerTrigger = 0;
 
 int led_pin = 16;
+
+int state, _state = 0;
+int increaseState = 0;
+
+int threshold = 0;
+int interval = 100;
+
+int _measure = 0;
 
 Ultrasonic ultrasonic(0, 4); // (Trig PIN, Echo PIN)
 
@@ -62,18 +71,24 @@ void callback(String key, String value) {
     oled.stack[2].text = String(value.c_str());
     oled.print();
   }
+  if (key == "threshold") {
+    threshold = std::stoi(value.c_str());
+  }
+  if (key == "interval") {
+    interval = std::stoi(value.c_str());
+  }
 }
 
 void trigger(Timer timeNow, Timer &timer, int power) {
   if (timeNow.hour >= timer.hour && timeNow.minute >= timer.minute && timeNow.second >= timer.second && timer.active == true) {
-    powerGlobal = power;
+    powerTrigger = power;
     timer.active = false;
   }
 }
 
 void reset(Timer timeNow, Timer &timer) {
-  // if (timeNow.hour == 0 && timeNow.minute == 0 && timeNow.second == 0) {
-  if (timeNow.second == 0) {
+  if (timeNow.hour == 0 && timeNow.minute == 0 && timeNow.second == 0) {
+  // if (timeNow.second == 0) {
     timer.active = true;
   }
 }
@@ -93,9 +108,21 @@ void increase(int &powerNew) {
   }
 }
 
-void distance() {
+bool switcher() {
   int distance = ultrasonic.read(40000UL);
+
   Serial.println(distance);
+
+  distance < threshold ? state = 1 : state = 0;
+
+  if (state != _state) {
+    increaseState++;
+    _state = state;
+  }
+
+  oled.stack[4].text = String(increaseState);
+
+  return increaseState % 4 != 0;
 }
 
 void setup() {
@@ -105,7 +132,8 @@ void setup() {
   oled.add(0, 0, "time", 2);
   oled.add(0, 25, "power1", 1);
   oled.add(30, 25, "power2", 1);
-  oled.add(0, 40, "increase", 2);
+  oled.add(0, 40, "i", 2);
+  oled.add(60, 40, "is", 2);
 
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(led_pin, OUTPUT);
@@ -126,7 +154,6 @@ void loop() {
   timeNow = timeService.getTimer(millis() - startTime);
 
   if (timeNow.second != t_timeNow.second) {
-    // Serial.println(timeNow.second);
 
     String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
 
@@ -139,11 +166,18 @@ void loop() {
     reset(timeNow, timer2);
     
     t_timeNow = timeNow;
+  }
 
-    // distance();
+  if (timeNow.millisecond % interval == 0 && timeNow.millisecond != 0) {
+    if (timeNow.millisecond != _measure) {
+      switcher() ? powerGlobal = powerTrigger : powerGlobal = 0;
+      _measure = timeNow.millisecond;
+    }
+  }
+  else {
+    _measure = 0;
   }
 
   increase(powerNew);
   analogWrite(led_pin, powerNew);
-  
 }

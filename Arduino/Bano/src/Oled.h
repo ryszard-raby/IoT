@@ -43,6 +43,9 @@ public:
     }
 
     void print() {
+
+        return;
+
         display.clearDisplay();
         for(size_t i = 0; i <= stack.size(); ++i) {
             display.setCursor(stack[i].x, stack[i].y);
