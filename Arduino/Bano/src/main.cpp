@@ -34,6 +34,8 @@ int interval = 100;
 
 int _measure = 0;
 
+int distance = 0;
+
 Ultrasonic ultrasonic(0, 4); // (Trig PIN, Echo PIN)
 
 WiFiService wifiService;
@@ -77,6 +79,9 @@ void callback(String key, String value) {
   if (key == "interval") {
     interval = std::stoi(value.c_str());
   }
+  if (key == "trigger") {
+    distance = std::stoi(value.c_str());
+  }
 }
 
 void trigger(Timer timeNow, Timer &timer, int power) {
@@ -109,7 +114,7 @@ void increase(int &powerNew) {
 }
 
 bool switcher() {
-  int distance = ultrasonic.read(40000UL);
+  // int distance = ultrasonic.read(40000UL);
 
   Serial.println(distance);
 
