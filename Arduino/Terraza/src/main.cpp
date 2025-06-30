@@ -144,13 +144,13 @@ void setup() {
 
 void loop() {
   firebaseService.firebaseStream();
-  timeNow.timePoint = timeSnapPoint + seconds(millis() / 1000 - startTime / 1000);
+
+  unsigned long elapsed = millis() - startTime;
+  timeNow.timePoint = timeSnapPoint + seconds(elapsed / 1000);
   timeNow = timeService.timerFromTimePoint(timeNow.timePoint);
 
   String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
   String formattedTimeAndDate = String(timeNow.day) + "/" + String(timeNow.month) + "/" + String(timeNow.year) + " " + formattedTime;
-
-
 
   if (timeNow.second != t_timeNow.second) {
 

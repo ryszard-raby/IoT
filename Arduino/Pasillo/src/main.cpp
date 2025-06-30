@@ -8,29 +8,20 @@
 
 int startTime = 0;
 
-bool updateLog = false;
-bool updateTime = false;
-
 Timer timeNow;
 Timer t_timeNow;
 Timer timer1;
 Timer timer2;
 
+int powerPin = 4;
+
 int manual = 0;
 int brightness = 255;
 
-auto timer1TimePoint = system_clock::now();
-auto timer2TimePoint = system_clock::now();
-auto intervalTimePoint = system_clock::now();
-
-Oled oled;
-
-int powerPin = 4;
-
-
-WiFiService wifiService;
 FirebaseService firebaseService;
+WiFiService wifiService;
 TimeService timeService;
+Oled oled;
 
 system_clock::time_point timeSnapPoint;
 
@@ -99,9 +90,6 @@ void setup() {
   oled.add(0, 40, "0", 2);
   oled.add(60, 40, "0", 2);
 
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(powerPin, OUTPUT);
-
   wifiService.connect();
   
   firebaseService.connectFirebase();
@@ -111,11 +99,16 @@ void setup() {
   firebaseService.setTimestamp();
 
   startTime = millis();
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(powerPin, OUTPUT);
 }
 
 void loop() {
   firebaseService.firebaseStream();
-  timeNow.timePoint = timeSnapPoint + seconds(millis() / 1000 - startTime / 1000);
+  
+  unsigned long elapsed = millis() - startTime;
+  timeNow.timePoint = timeSnapPoint + seconds(elapsed / 1000);
   timeNow = timeService.timerFromTimePoint(timeNow.timePoint);
 
   String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
@@ -135,10 +128,9 @@ void loop() {
     if (trigger(timeNow, timer1, timer2) || manual == 1) {
       analogWrite(powerPin, brightness);
       analogWrite(LED_BUILTIN, 255 - brightness);
-      updateLog = true;
     }
     else {
-      digitalWrite(powerPin, LOW);
+      analogWrite(powerPin, LOW);
       analogWrite(LED_BUILTIN, 255);
     }
   }

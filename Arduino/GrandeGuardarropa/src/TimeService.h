@@ -8,7 +8,7 @@ class TimeService {
 
     system_clock::time_point timeSnapPoint;
 
-    system_clock::time_point setTimePoint(long long timeStamp) {
+    system_clock::time_point snapTimePoint(long long timeStamp) {
         system_clock::time_point timePoint = system_clock::from_time_t(timeStamp/1000);
         
         // UTC+1
@@ -29,17 +29,31 @@ class TimeService {
         return timePoint;
     }
 
-    system_clock::time_point getTimePointNow(int liveTime) {
+    system_clock::time_point timePointNow(int liveTime) {
         return timeSnapPoint + seconds(liveTime/1000);
     }
 
-    Timer getTimer(int liveTime) {
+    Timer timerFromTimePoint(system_clock::time_point timePoint) {
         Timer Timer;
-        time_t currentTime = system_clock::to_time_t(getTimePointNow(liveTime));
+        time_t currentTime = system_clock::to_time_t(timePoint);
         auto lt = localtime(&currentTime);
+        Timer.day = lt->tm_mday;
+        Timer.month = lt->tm_mon + 1;  // tm_mon is 0-11, we need 1-12
+        Timer.year = lt->tm_year + 1900;  // tm_year is years since 1900
         Timer.hour = lt->tm_hour;
         Timer.minute = lt->tm_min;
         Timer.second = lt->tm_sec;
+        Timer.millisecond = 0;
+        Timer.timePoint = timePoint;
         return Timer;
+    }
+
+    system_clock::time_point timePointFromTimer(Timer Timer) {
+        time_t currentTime = time(0);
+        auto lt = localtime(&currentTime);
+        lt->tm_hour = Timer.hour;
+        lt->tm_min = Timer.minute;
+        lt->tm_sec = Timer.second;
+        return system_clock::from_time_t(mktime(lt));
     }
 };

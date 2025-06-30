@@ -38,8 +38,8 @@ class TimeService {
         time_t currentTime = system_clock::to_time_t(timePoint);
         auto lt = localtime(&currentTime);
         Timer.day = lt->tm_mday;
-        Timer.month = lt->tm_mon;
-        Timer.year = lt->tm_year;
+        Timer.month = lt->tm_mon + 1;  // tm_mon is 0-11, we need 1-12
+        Timer.year = lt->tm_year + 1900;  // tm_year is years since 1900
         Timer.hour = lt->tm_hour;
         Timer.minute = lt->tm_min;
         Timer.second = lt->tm_sec;
