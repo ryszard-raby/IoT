@@ -16,7 +16,7 @@ Timer timer2;
 int powerPin = 4;
 
 int manual = 0;
-int brightness = 255;
+int brightness = 0;
 
 FirebaseService firebaseService;
 WiFiService wifiService;
@@ -47,7 +47,7 @@ void callback(String key, String value) {
     timer1.minute = 0;
     timer1.second = 0;
     setTimePoint(timer1, timeNow);
-    Serial.println("timer1");
+    Serial.println("timer1: " + String(timer1.hour));
   }
 
   if (key == "timer2") {
@@ -55,7 +55,7 @@ void callback(String key, String value) {
     timer2.minute = 0;
     timer2.second = 0;
     setTimePoint(timer2, timeNow);
-    Serial.println("timer2");
+    Serial.println("timer2: " + String(timer2.hour));
   }
 
   if (key == "manual") {
@@ -66,7 +66,7 @@ void callback(String key, String value) {
     brightness = std::stoi(value.c_str());
     if (brightness < 0) brightness = 0;
     if (brightness > 255) brightness = 255;
-    analogWrite(LED_BUILTIN, brightness);
+    Serial.println("brightness: " + String(brightness));
   }
 }
 
