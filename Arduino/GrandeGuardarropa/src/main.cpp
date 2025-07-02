@@ -2,6 +2,7 @@
 #include <WiFiService.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
+#include <OTAService.h>
 #include <chrono>
 #include <time.h>
 #include <Oled.h>
@@ -23,6 +24,7 @@ FirebaseService firebaseService;
 WiFiService wifiService;
 TimeService timeService;
 Oled oled;
+OTAService otaService;
 
 system_clock::time_point timeSnapPoint;
 
@@ -85,6 +87,9 @@ bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("===============================");
+  Serial.println("GRANDE GUARDARROPA STARTING...");
+  Serial.println("===============================");
 
   oled.init();
   oled.add(0, 0, "time", 2);
@@ -94,6 +99,9 @@ void setup() {
   oled.add(60, 40, "0", 2);
 
   wifiService.connect();
+  
+  // Inicjalizuj OTA po połączeniu z WiFi
+  otaService.init();
   
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
@@ -110,6 +118,16 @@ void setup() {
 }
 
 void loop() {
+  // Obsługuj żądania OTA
+  otaService.handle();
+  
+  // Wyświetl status OTA co 30 sekund (tylko jeśli nie ma aktualizacji OTA)
+  static unsigned long lastStatusPrint = 0;
+  if (millis() - lastStatusPrint > 30000) {
+    otaService.printStatus();
+    lastStatusPrint = millis();
+  }
+  
   firebaseService.firebaseStream();
   
   unsigned long elapsed = millis() - startTime;
