@@ -2,7 +2,6 @@
 #include <WiFiService.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
-#include <OTAService.h>
 #include <chrono>
 #include <time.h>
 #include <Oled.h>
@@ -14,17 +13,15 @@ Timer t_timeNow;
 Timer timer1;
 Timer timer2;
 
-const int pinsCount = 3;
-int pin[pinsCount] = {5, 4, 12};
+int powerPin = 4;
 
-int brightness1 = 1;
-int brightness2 = 1;
+int manual = 0;
+int brightness = 0;
 
 FirebaseService firebaseService;
 WiFiService wifiService;
 TimeService timeService;
 Oled oled;
-OTAService otaService;
 
 system_clock::time_point timeSnapPoint;
 
@@ -41,15 +38,16 @@ void setTimePoint(Timer &timer, Timer &timeNow) {
 
 void callback(String key, String value) {
   if (key == "time") {
+    Serial.println(std::stoll(value.c_str()));
     timeSnapPoint = timeService.snapTimePoint(std::stoll(value.c_str()));
   }
-  
+
   if (key == "timer1") {
     timer1.hour = std::stoi(value.c_str());
     timer1.minute = 0;
-    timer1.second = 0; 
+    timer1.second = 0;
     setTimePoint(timer1, timeNow);
-    Serial.println("timer1: " + value);
+    Serial.println("timer1: " + String(timer1.hour));
   }
 
   if (key == "timer2") {
@@ -57,21 +55,18 @@ void callback(String key, String value) {
     timer2.minute = 0;
     timer2.second = 0;
     setTimePoint(timer2, timeNow);
-    Serial.println("timer2: " + value);
+    Serial.println("timer2: " + String(timer2.hour));
   }
 
-  if (key == "brightness1") {
-    brightness1 = std::stoi(value.c_str());
-    if (brightness1< 0) brightness1 = 0;
-    if (brightness1 > 255) brightness1 = 255;
-    Serial.println("brightness1: " + value);
+  if (key == "manual") {
+    manual = std::stoi(value.c_str());
   }
 
-  if (key == "brightness2") {
-    brightness2 = std::stoi(value.c_str());
-    if (brightness2 < 0) brightness2 = 0;
-    if (brightness2 > 255) brightness2 = 255;
-    Serial.println("brightness2: " + value);
+  if (key == "brightness") {
+    brightness = std::stoi(value.c_str());
+    if (brightness < 0) brightness = 0;
+    if (brightness > 255) brightness = 255;
+    Serial.println("brightness: " + String(brightness));
   }
 }
 
@@ -87,9 +82,6 @@ bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("===============================");
-  Serial.println("GRANDE GUARDARROPA STARTING...");
-  Serial.println("===============================");
 
   oled.init();
   oled.add(0, 0, "time", 2);
@@ -100,9 +92,6 @@ void setup() {
 
   wifiService.connect();
   
-  // Inicjalizuj OTA po połączeniu z WiFi
-  otaService.init();
-  
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
     callback(key, value);
@@ -112,22 +101,10 @@ void setup() {
   startTime = millis();
 
   pinMode(LED_BUILTIN, OUTPUT);
-  for (int i = 0; i < pinsCount; i++) {
-    pinMode(pin[i], OUTPUT);
-  }
+  pinMode(powerPin, OUTPUT);
 }
 
 void loop() {
-  // Obsługuj żądania OTA
-  otaService.handle();
-  
-  // Wyświetl status OTA co 30 sekund (tylko jeśli nie ma aktualizacji OTA)
-  static unsigned long lastStatusPrint = 0;
-  if (millis() - lastStatusPrint > 30000) {
-    otaService.printStatus();
-    lastStatusPrint = millis();
-  }
-  
   firebaseService.firebaseStream();
   
   unsigned long elapsed = millis() - startTime;
@@ -147,19 +124,14 @@ void loop() {
     oled.stack[3].text = String(timer1.hour);
     oled.stack[4].text = String(timer2.hour);
     oled.print();
-  }
 
-  if (trigger(timeNow, timer1, timer2)) {
-    for (int i = 0; i < pinsCount; i++) {
-      analogWrite(pin[i], brightness1); // Comment this line for debugging - pin (12) is used for oled screen
+    if (trigger(timeNow, timer1, timer2) || manual == 1) {
+      analogWrite(powerPin, brightness);
+      analogWrite(LED_BUILTIN, 255 - brightness);
     }
-    analogWrite(LED_BUILTIN, 255 - brightness1);
-  }
-  else {
-    for (int i = 0; i < pinsCount; i++) {
-      analogWrite(pin[i], brightness2); // Comment this line for debugging - pin (12) is used for oled screen
+    else {
+      analogWrite(powerPin, LOW);
+      analogWrite(LED_BUILTIN, 255);
     }
-    analogWrite(LED_BUILTIN, 255 - brightness2);
   }
-
 }

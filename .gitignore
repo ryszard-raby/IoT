@@ -37,3 +37,4 @@ Micropython/__pycache__/*
 .gitignore
 .gitignore
 .travis.yml
+.vscode

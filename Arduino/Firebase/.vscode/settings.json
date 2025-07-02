@@ -1,3 +1,7 @@
 {
-    "cmake.sourceDirectory": "C:/_Git/IoT/Arduino/Firebase/.pio/libdeps/esp12e/Unity"
+    "cmake.sourceDirectory": "C:/_Git/IoT/Arduino/Firebase/.pio/libdeps/esp12e/Unity",
+    "files.associations": {
+        "*.mjml": "html",
+        "iostream": "cpp"
+    }
 }
