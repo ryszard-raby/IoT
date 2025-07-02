@@ -1,10 +1,11 @@
 #include <ESP8266WiFi.h>
-#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+#include <C:/Users/rysza/OneDrive/auth/auth.h>
 
 class WiFiService {
     public:
     void connect() {
         WiFi.mode(WIFI_STA);
+        // WiFi.begin(WIFI_SSID, WIFI_PASS);
         WiFi.begin(WIFI_SSID, WIFI_PASS);
 
         while (WiFi.status() != WL_CONNECTED) {

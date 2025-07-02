@@ -108,7 +108,6 @@ void setup() {
     callback(key, value);
   });
   firebaseService.setTimestamp();
-
   startTime = millis();
 
   pinMode(LED_BUILTIN, OUTPUT);
@@ -120,14 +119,7 @@ void setup() {
 void loop() {
   // Obsługuj żądania OTA
   otaService.handle();
-  
-  // Wyświetl status OTA co 30 sekund (tylko jeśli nie ma aktualizacji OTA)
-  static unsigned long lastStatusPrint = 0;
-  if (millis() - lastStatusPrint > 30000) {
-    otaService.printStatus();
-    lastStatusPrint = millis();
-  }
-  
+
   firebaseService.firebaseStream();
   
   unsigned long elapsed = millis() - startTime;
@@ -135,19 +127,29 @@ void loop() {
   timeNow = timeService.timerFromTimePoint(timeNow.timePoint);
 
   String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
-  String formattedTimeAndDate = String(timeNow.day) + "/" + String(timeNow.month) + "/" + String(timeNow.year) + " " + formattedTime;
+  
+  // Zapisz status co godzinę do Firebase (na początku każdej godziny)
+  static int lastHourLogged = -1;
+  if (timeNow.minute == 0 && timeNow.second == 0 && timeNow.hour != lastHourLogged) {
+    String formattedDateTime = String(timeNow.day) + "/" + String(timeNow.month) + "/" + String(timeNow.year) + " " + 
+                              String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
 
-  if (timeNow.second != t_timeNow.second) {
-    t_timeNow.second = timeNow.second;
-
-    setTimePoint(timer1, timeNow);
-    setTimePoint(timer2, timeNow);
-
-    oled.stack[0].text = formattedTime;
-    oled.stack[3].text = String(timer1.hour);
-    oled.stack[4].text = String(timer2.hour);
-    oled.print();
+    firebaseService.setCurrentDateTime(formattedDateTime.c_str());
+    Serial.println("Status zapisany do Firebase: " + formattedDateTime);
+    lastHourLogged = timeNow.hour;
   }
+
+  // if (timeNow.second != t_timeNow.second) {
+  //   t_timeNow.second = timeNow.second;
+
+  //   setTimePoint(timer1, timeNow);
+  //   setTimePoint(timer2, timeNow);
+
+  //   oled.stack[0].text = formattedTime;
+  //   oled.stack[3].text = String(timer1.hour);
+  //   oled.stack[4].text = String(timer2.hour);
+  //   oled.print();
+  // }
 
   if (trigger(timeNow, timer1, timer2)) {
     for (int i = 0; i < pinsCount; i++) {
