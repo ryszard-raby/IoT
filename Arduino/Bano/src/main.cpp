@@ -7,30 +7,23 @@
 #include <chrono>
 #include <time.h>
 #include <Oled.h>
+#include <OTAService.h>
 
 int startTime = 0;
 
 Timer timeNow;
-Timer t_timeNow;
 Timer timer1;
 Timer timer2;
 
-Oled oled;
-
-int power1 = 0;
-int power2 = 0;
-
-int powerNew = 0;
-int powerGlobal = 0;
-int powerTrigger = 0;
-
 int led_pin = 16;
 
+int brightness1 = 0;
+int brightness2 = 0;
+
 int state, _state = 0;
-int increaseState = 0;
 
 int threshold = 0;
-int interval = 100;
+long interval = 1000;
 
 int _measure = 0;
 
@@ -41,82 +34,88 @@ Ultrasonic ultrasonic(0, 4); // (Trig PIN, Echo PIN)
 WiFiService wifiService;
 FirebaseService firebaseService;
 TimeService timeService;
+Oled oled;
+OTAService otaService;
 
 system_clock::time_point timeSnapPoint;
+
+void setTimePoint(Timer &timer, Timer &timeNow) {
+  timer.timePoint = timeNow.timePoint;
+
+  time_t currentTime = system_clock::to_time_t(timer.timePoint);
+  struct tm *timeInfo = localtime(&currentTime);
+  timeInfo->tm_hour = timer.hour;
+  timeInfo->tm_min = timer.minute;
+  timeInfo->tm_sec = timer.second;
+  timer.timePoint = system_clock::from_time_t(mktime(timeInfo));
+}
 
 void callback(String key, String value) {
   if (key == "time") {
     Serial.println(std::stoll(value.c_str()));
-    timeSnapPoint = timeService.setTimePoint(std::stoll(value.c_str()));
+    timeSnapPoint = timeService.snapTimePoint(std::stoll(value.c_str()));
   }
+
   if (key == "timer1") {
-    timer1.hour = timeNow.hour;
-    timer1.minute = timeNow.minute;
-    timer1.second = std::stoi(value.c_str());
-    timer1.active = true;
+    timer1.hour = std::stoi(value.c_str());
+    timer1.minute = 0;
+    timer1.second = 0; 
+    setTimePoint(timer1, timeNow);
+    Serial.println("timer1: " + value);
   }
+
   if (key == "timer2") {
-    timer2.hour = timeNow.hour;
-    timer2.minute = timeNow.minute;
-    timer2.second = std::stoi(value.c_str());
-    timer2.active = true;
+    timer2.hour = std::stoi(value.c_str());
+    timer2.minute = 0;
+    timer2.second = 0;
+    setTimePoint(timer2, timeNow);
+    Serial.println("timer2: " + value);
   }
-  if (key == "power1") {
-    power1 = std::stoi(value.c_str());
-    timer1.active = true;
-    oled.stack[1].text = String(value.c_str());
-    oled.print();
+
+  if (key == "brightness1") {
+    brightness1 = std::stoi(value.c_str());
+    if (brightness1< 0) brightness1 = 0;
+    if (brightness1 > 255) brightness1 = 255;
+    Serial.println("brightness1: " + value);
   }
-  if (key == "power2") {
-    power2 = std::stoi(value.c_str());
-    timer2.active = true;
-    oled.stack[2].text = String(value.c_str());
-    oled.print();
+
+  if (key == "brightness2") {
+    brightness2 = std::stoi(value.c_str());
+    if (brightness2 < 0) brightness2 = 0;
+    if (brightness2 > 255) brightness2 = 255;
+    Serial.println("brightness2: " + value);
   }
+
   if (key == "threshold") {
     threshold = std::stoi(value.c_str());
+    Serial.println("threshold: " + value);
   }
+
   if (key == "interval") {
     interval = std::stoi(value.c_str());
+    Serial.println("interval: " + value);
   }
-  if (key == "trigger") {
+
+  if (key == "distance") {
     distance = std::stoi(value.c_str());
+    Serial.println("trigger: " + value);
   }
 }
 
-void trigger(Timer timeNow, Timer &timer, int power) {
-  if (timeNow.hour >= timer.hour && timeNow.minute >= timer.minute && timeNow.second >= timer.second && timer.active == true) {
-    powerTrigger = power;
-    timer.active = false;
-  }
-}
 
-void reset(Timer timeNow, Timer &timer) {
-  if (timeNow.hour == 0 && timeNow.minute == 0 && timeNow.second == 0) {
-  // if (timeNow.second == 0) {
-    timer.active = true;
-  }
-}
-
-void increase(int &powerNew) {
-
-  if (powerNew < powerGlobal) {
-    powerNew++;
-  }
-  if (powerNew > powerGlobal) {
-    powerNew--;
-  }
-  
-  oled.stack[3].text = String(powerNew);
-  if (powerNew != powerGlobal) {
-    oled.print();
+bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
+  if (timer1.hour <= timer2.hour) {
+    // Przedział nie przechodzi przez północ
+    return (timeNow.hour >= timer1.hour && timeNow.hour < timer2.hour);
+  } else {
+    // Przedział przechodzi przez północ
+    return (timeNow.hour >= timer1.hour || timeNow.hour < timer2.hour);
   }
 }
 
 bool switcher() {
-  // int distance = ultrasonic.read(40000UL);
-
-  Serial.println(distance);
+  static int increaseState = 0;
+  int distance = ultrasonic.read(40000UL);
 
   distance < threshold ? state = 1 : state = 0;
 
@@ -125,7 +124,7 @@ bool switcher() {
     _state = state;
   }
 
-  oled.stack[4].text = String(increaseState);
+  oled.stack[1].text = String(increaseState % 4);
 
   return increaseState % 4 != 0;
 }
@@ -135,15 +134,18 @@ void setup() {
 
   oled.init();
   oled.add(0, 0, "time", 2);
-  oled.add(0, 25, "power1", 1);
-  oled.add(30, 25, "power2", 1);
   oled.add(0, 40, "i", 2);
   oled.add(60, 40, "is", 2);
 
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(led_pin, OUTPUT);
+  analogWrite(led_pin, 0);
+  analogWrite(LED_BUILTIN, 255);
 
   wifiService.connect();
+  
+  // Inicjalizuj OTA po połączeniu z WiFi
+  otaService.init();
   
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
@@ -155,34 +157,64 @@ void setup() {
 }
 
 void loop() {
-  firebaseService.firebaseStream();
-  timeNow = timeService.getTimer(millis() - startTime);
+  // Obsługuj żądania OTA
+  otaService.handle();
 
-  if (timeNow.second != t_timeNow.second) {
+  firebaseService.firebaseStream();
+  unsigned long elapsed = millis() - startTime;
+  timeNow.timePoint = timeSnapPoint + seconds(elapsed / 1000);
+  timeNow = timeService.timerFromTimePoint(timeNow.timePoint);
+
+  static Timer lastTimeNow = timeNow;
+  if (timeNow.second != lastTimeNow.second) {
 
     String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
 
     oled.stack[0].text = formattedTime;
     oled.print();
     
-    trigger(timeNow, timer1, power1);
-    trigger(timeNow, timer2, power2);
-    reset(timeNow, timer1);
-    reset(timeNow, timer2);
+    trigger(timeNow, timer1, timer2);
     
-    t_timeNow = timeNow;
+    lastTimeNow = timeNow;
   }
 
-  if (timeNow.millisecond % interval == 0 && timeNow.millisecond != 0) {
-    if (timeNow.millisecond != _measure) {
-      switcher() ? powerGlobal = powerTrigger : powerGlobal = 0;
-      _measure = timeNow.millisecond;
-    }
+  // Sprawdzamy stan przełącznika raz na interval ms i zapisujemy wynik
+  static bool switcherState = false;
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck >= interval) {
+    switcherState = switcher();
+    lastCheck = millis();
+  }
+
+  // Aktualizujemy OLED co 100ms
+  static unsigned long lastOledUpdate = 0;
+  if (millis() - lastOledUpdate >= 100) {
+    oled.stack[2].text = String(switcherState ? "ON" : "OFF");
+    lastOledUpdate = millis();
+  }
+
+  // Ustawiamy jasność LED w zależności od pory dnia i stanu przełącznika
+  static unsigned long brightnessGlobal = 0;
+  if (trigger(timeNow, timer1, timer2) && switcherState) {
+    brightnessGlobal = brightness1;
+  }
+  else if (!trigger(timeNow, timer1, timer2) && switcherState) {
+    brightnessGlobal = brightness2; 
   }
   else {
-    _measure = 0;
+    brightnessGlobal = 0; // Domyślna jasność, jeśli nie ma aktywnego przełącznika
   }
 
-  increase(powerNew);
-  analogWrite(led_pin, powerNew);
+  // Stopniowe przejście do nowej jasności
+  static unsigned long brightnessTemp = 0;
+  if (brightnessTemp < brightnessGlobal) {
+    brightnessTemp += 1;
+  } else if (brightnessTemp > brightnessGlobal) {
+    // brightnessTemp <= 0 ? 0 : brightnessTemp -= 10;
+    brightnessTemp = (brightnessTemp <= 10) ? 0 : brightnessTemp - 10; // Zapobiega ujemnej jasności
+  }
+
+  // Ustawiamy jasność LED
+  analogWrite(led_pin, brightnessTemp);
+  analogWrite(LED_BUILTIN, 255 - brightnessTemp);
 }

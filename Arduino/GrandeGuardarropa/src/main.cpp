@@ -14,8 +14,8 @@ Timer t_timeNow;
 Timer timer1;
 Timer timer2;
 
-const int pinsCount = 3;
-int pin[pinsCount] = {5, 4, 12};
+int pin[] = {5, 4, 12};
+const int pinsCount = sizeof(pin) / sizeof(pin[0]);
 
 int brightness1 = 1;
 int brightness2 = 1;
