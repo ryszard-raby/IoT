@@ -23,7 +23,7 @@ int brightness2 = 0;
 int state, _state = 0;
 
 int threshold = 0;
-long interval = 1000;
+unsigned long interval = 1000;
 
 int _measure = 0;
 
@@ -115,7 +115,7 @@ bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
 
 bool switcher() {
   static int increaseState = 0;
-  int distance = ultrasonic.read(40000UL);
+  distance = ultrasonic.read(40000UL);
 
   distance < threshold ? state = 1 : state = 0;
 
@@ -192,6 +192,13 @@ void loop() {
     oled.stack[2].text = String(switcherState ? "ON" : "OFF");
     lastOledUpdate = millis();
   }
+
+  // Wysyłamy distance do Firebase co 10 sekund
+  // static unsigned long lastFirebaseSend = 0;
+  // if (millis() - lastFirebaseSend >= 10000) {
+  //   firebaseService.setPin("distance-test", distance);
+  //   lastFirebaseSend = millis();
+  // }
 
   // Ustawiamy jasność LED w zależności od pory dnia i stanu przełącznika
   static unsigned long brightnessGlobal = 0;
