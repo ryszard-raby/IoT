@@ -20,14 +20,13 @@ int led_pin = 16;
 int brightness1 = 0;
 int brightness2 = 0;
 
-int state, _state = 0;
-
 int threshold = 0;
 unsigned long interval = 1000;
 
 int _measure = 0;
 
 int distance = 0;
+int ultrasonicEnable = 0;
 
 Ultrasonic ultrasonic(0, 4); // (Trig PIN, Echo PIN)
 
@@ -96,8 +95,8 @@ void callback(String key, String value) {
     Serial.println("interval: " + value);
   }
 
-  if (key == "distance") {
-    distance = std::stoi(value.c_str());
+  if (key == "ultrasonicEnable") {
+    ultrasonicEnable = std::stoi(value.c_str());
     Serial.println("trigger: " + value);
   }
 }
@@ -113,17 +112,21 @@ bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
   }
 }
 
-bool switcher() {
+bool switcher(unsigned long elapsed, unsigned long interval) {
   static int increaseState = 0;
-  distance = ultrasonic.read(40000UL);
+  static int state, _state = 0;
+  static unsigned long _elapsed = 0;
 
-  distance < threshold ? state = 1 : state = 0;
+  ultrasonicEnable > 0 ? distance = ultrasonic.read(40000UL) : distance = ultrasonicEnable;
 
-  if (state != _state) {
+  state = (distance < threshold);
+  
+  if (state != _state && elapsed - _elapsed >= interval) {
     increaseState++;
+
+    _elapsed = elapsed;
     _state = state;
   }
-
   oled.stack[1].text = String(increaseState % 4);
 
   return increaseState % 4 != 0;
@@ -141,6 +144,9 @@ void setup() {
   pinMode(led_pin, OUTPUT);
   analogWrite(led_pin, 0);
   analogWrite(LED_BUILTIN, 255);
+
+  analogWriteFreq(4000);     // 4 kHz – typowo niewidoczne migotanie
+  analogWriteRange(1023);    // zachowaj 10-bitową rozdzielczość (opcjonalnie)
 
   wifiService.connect();
   
@@ -178,27 +184,8 @@ void loop() {
     lastTimeNow = timeNow;
   }
 
-  // Sprawdzamy stan przełącznika raz na interval ms i zapisujemy wynik
-  static bool switcherState = false;
-  static unsigned long lastCheck = 0;
-  if (millis() - lastCheck >= interval) {
-    switcherState = switcher();
-    lastCheck = millis();
-  }
-
-  // Aktualizujemy OLED co 100ms
-  static unsigned long lastOledUpdate = 0;
-  if (millis() - lastOledUpdate >= 100) {
-    oled.stack[2].text = String(switcherState ? "ON" : "OFF");
-    lastOledUpdate = millis();
-  }
-
-  // Wysyłamy distance do Firebase co 10 sekund
-  // static unsigned long lastFirebaseSend = 0;
-  // if (millis() - lastFirebaseSend >= 10000) {
-  //   firebaseService.setPin("distance-test", distance);
-  //   lastFirebaseSend = millis();
-  // }
+  // Sprawdzamy stan przełącznika
+  bool switcherState = switcher(elapsed, interval);
 
   // Ustawiamy jasność LED w zależności od pory dnia i stanu przełącznika
   static unsigned long brightnessGlobal = 0;

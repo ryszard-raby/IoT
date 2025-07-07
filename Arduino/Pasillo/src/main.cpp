@@ -5,23 +5,28 @@
 #include <chrono>
 #include <time.h>
 #include <Oled.h>
+#include <OTAService.h>
 
 int startTime = 0;
 
 Timer timeNow;
 Timer t_timeNow;
+Timer timer0;
 Timer timer1;
 Timer timer2;
 
 int powerPin = 4;
 
 int manual = 0;
-int brightness = 0;
+int power0 = 0;
+int power1 = 0;
+int power2 = 0;
 
 FirebaseService firebaseService;
 WiFiService wifiService;
 TimeService timeService;
 Oled oled;
+OTAService otaService;
 
 system_clock::time_point timeSnapPoint;
 
@@ -40,6 +45,14 @@ void callback(String key, String value) {
   if (key == "time") {
     Serial.println(std::stoll(value.c_str()));
     timeSnapPoint = timeService.snapTimePoint(std::stoll(value.c_str()));
+  }
+
+  if (key == "timer0") {
+    timer0.hour = std::stoi(value.c_str());
+    timer0.minute = 0;
+    timer0.second = 0;
+    setTimePoint(timer0, timeNow);
+    Serial.println("timer0: " + String(timer0.hour));
   }
 
   if (key == "timer1") {
@@ -62,22 +75,61 @@ void callback(String key, String value) {
     manual = std::stoi(value.c_str());
   }
 
-  if (key == "brightness") {
-    brightness = std::stoi(value.c_str());
-    if (brightness < 0) brightness = 0;
-    if (brightness > 255) brightness = 255;
-    Serial.println("brightness: " + String(brightness));
+  if (key == "power0") {
+    power0 = std::stoi(value.c_str());
+    if (power0 < 0) power0 = 0;
+    if (power0 > 255) power0 = 255;
+    Serial.println("power0: " + String(power0));
+  }
+
+  if (key == "power1") {
+    power1 = std::stoi(value.c_str());
+    if (power1 < 0) power1 = 0;
+    if (power1 > 255) power1 = 255;
+    Serial.println("power1: " + String(power1));
+  }
+
+  if (key == "power2") {
+    power2 = std::stoi(value.c_str());
+    if (power2 < 0) power2 = 0;
+    if (power2 > 255) power2 = 255;
+    Serial.println("power2: " + String(power2));
   }
 }
 
-bool trigger(Timer timeNow, Timer &timer1, Timer &timer2) {
-  if (timer1.hour <= timer2.hour) {
-    // Przedział nie przechodzi przez północ
-    return (timeNow.hour >= timer1.hour && timeNow.hour < timer2.hour);
-  } else {
-    // Przedział przechodzi przez północ
-    return (timeNow.hour >= timer1.hour || timeNow.hour < timer2.hour);
+struct TimerPower {
+  int hour;
+  int powerValue;
+};
+
+int getPower(Timer timeNow, Timer &timer0, Timer &timer1, Timer &timer2, int power0, int power1, int power2) {
+  TimerPower schedule[] = {
+    {timer0.hour, power0},  // Od timer0 - power0
+    {timer1.hour, power1},  // Od timer1 - power1  
+    {timer2.hour, power2}   // Od timer2 - power2
+  };
+  
+  // Znajdź aktualną moc
+  for (int i = 0; i < 3; i++) {
+    int nextIndex = (i + 1) % 3;
+    int currentHour = schedule[i].hour;
+    int nextHour = schedule[nextIndex].hour;
+    
+    bool inRange = false;
+    if (currentHour <= nextHour) {
+      // Przedział nie przechodzi przez północ
+      inRange = (timeNow.hour >= currentHour && timeNow.hour < nextHour);
+    } else {
+      // Przedział przechodzi przez północ
+      inRange = (timeNow.hour >= currentHour || timeNow.hour < nextHour);
+    }
+    
+    if (inRange) {
+      return schedule[i].powerValue;
+    }
   }
+  
+  return 0; // Poza wszystkimi przedziałami
 }
 
 void setup() {
@@ -85,12 +137,17 @@ void setup() {
 
   oled.init();
   oled.add(0, 0, "time", 2);
-  oled.add(0, 25, "timer1", 1);
+  oled.add(0, 25, "timer0", 1);
+  oled.add(30, 25, "timer1", 1);
   oled.add(60, 25, "timer2", 1);
-  oled.add(0, 40, "0", 2);
-  oled.add(60, 40, "0", 2);
+  oled.add(0, 40, "0", 1);
+  oled.add(30, 40, "0", 1);
+  oled.add(60, 40, "0", 1);
 
   wifiService.connect();
+  
+  // Inicjalizuj OTA po połączeniu z WiFi
+  otaService.init();
   
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
@@ -105,6 +162,9 @@ void setup() {
 }
 
 void loop() {
+  // Obsługuj żądania OTA
+  otaService.handle();
+
   firebaseService.firebaseStream();
   
   unsigned long elapsed = millis() - startTime;
@@ -114,24 +174,34 @@ void loop() {
   String formattedTime = String(timeNow.hour) + ":" + String(timeNow.minute) + ":" + String(timeNow.second);
   String formattedTimeAndDate = String(timeNow.day) + "/" + String(timeNow.month) + "/" + String(timeNow.year) + " " + formattedTime;
 
-  if (timeNow.second != t_timeNow.second) {
-    t_timeNow.second = timeNow.second;
+  // if (timeNow.second != t_timeNow.second) {
+  //   t_timeNow.second = timeNow.second;
 
-    setTimePoint(timer1, timeNow);
-    setTimePoint(timer2, timeNow);
+  //   setTimePoint(timer0, timeNow);
+  //   setTimePoint(timer1, timeNow);
+  //   setTimePoint(timer2, timeNow);
 
-    oled.stack[0].text = formattedTime;
-    oled.stack[3].text = String(timer1.hour);
-    oled.stack[4].text = String(timer2.hour);
-    oled.print();
+  //   oled.stack[0].text = formattedTime;
+  //   oled.stack[1].text = String(timer0.hour);
+  //   oled.stack[2].text = String(timer1.hour);
+  //   oled.stack[3].text = String(timer2.hour);
+  //   oled.stack[4].text = String(power0);
+  //   oled.stack[5].text = String(power1);
+  //   oled.stack[6].text = String(power2);
+  //   oled.print();
+  // }
 
-    if (trigger(timeNow, timer1, timer2) || manual == 1) {
-      analogWrite(powerPin, brightness);
-      analogWrite(LED_BUILTIN, 255 - brightness);
-    }
-    else {
-      analogWrite(powerPin, LOW);
-      analogWrite(LED_BUILTIN, 255);
-    }
+  // Oblicz moc na podstawie aktualnego czasu i timerów
+  int powerGlobal = getPower(timeNow, timer0, timer1, timer2, power0, power1, power2);
+
+  // Stopniowe przejście do nowej jasności
+  static unsigned int powerTemp = 0;
+  if (powerTemp < powerGlobal) {
+    powerTemp += 1;
+  } else if (powerTemp > powerGlobal) {
+    powerTemp -= 1;
   }
+
+  analogWrite(powerPin, powerTemp);
+  analogWrite(LED_BUILTIN, 255 - powerTemp);
 }

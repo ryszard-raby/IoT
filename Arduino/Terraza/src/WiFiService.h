@@ -1,5 +1,5 @@
 #include <ESP8266WiFi.h>
-#include <C:/Users/ryszard.raby/OneDrive/auth/auth.h>
+#include <C:/Users/rysza/OneDrive/auth/auth.h>
 
 class WiFiService {
     public:

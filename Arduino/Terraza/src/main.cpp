@@ -6,6 +6,7 @@
 #include <chrono>
 #include <time.h>
 #include <Oled.h>
+#include <OTAService.h>
 
 int startTime = 0;
 
@@ -23,6 +24,7 @@ auto timer2TimePoint = system_clock::now();
 auto intervalTimePoint = system_clock::now();
 
 Oled oled;
+OTAService otaService("Terraza", "update123");
 
 int powerPin = 4;
 
@@ -133,6 +135,9 @@ void setup() {
 
   wifiService.connect();
   
+  // Inicjalizuj OTA po połączeniu z WiFi
+  otaService.init();
+  
   firebaseService.connectFirebase();
   firebaseService.setCallback([](String key, String value) {
     callback(key, value);
@@ -143,6 +148,9 @@ void setup() {
 }
 
 void loop() {
+  // Obsługuj żądania OTA
+  otaService.handle();
+
   firebaseService.firebaseStream();
 
   unsigned long elapsed = millis() - startTime;
