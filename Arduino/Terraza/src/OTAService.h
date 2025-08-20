@@ -10,7 +10,7 @@ private:
     String password;
     
 public:
-    OTAService(String deviceHostname = "Bano", String otaPassword = "update123") 
+    OTAService(String deviceHostname = "Terraza", String otaPassword = "update123") 
         : hostname(deviceHostname), password(otaPassword) {}
     
     void init() {
