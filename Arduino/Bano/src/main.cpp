@@ -127,6 +127,11 @@ bool switcher(unsigned long elapsed, unsigned long interval) {
     _elapsed = elapsed;
     _state = state;
   }
+
+  if (state != _state && state == true) {
+    _elapsed = elapsed; // resetuj timer tylko na zboczu wchodzącym (obecność)
+  }
+
   oled.stack[1].text = String(increaseState % 4);
 
   return increaseState % 4 != 0;
