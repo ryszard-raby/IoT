@@ -2,111 +2,146 @@
 #include <addons/TokenHelper.h>
 #include <C:\Users\Richart\OneDrive\auth\auth.h>
 
+// ---- Fallback – dopóki auth.h nie ma IOINIT2_DEVICEID__PROTOTYPE ----
+#ifndef IOINIT2_DEVICEID__PROTOTYPE
+#define IOINIT2_DEVICEID__PROTOTYPE DEVICEID__PROTOTYPE
+#endif
+
+// ---- Firebase globals (singleton per device) ----
 FirebaseData fbData;
 FirebaseAuth fbAuth;
 FirebaseConfig fbConfig;
 
 class FirebaseService {
+    // Inicjalizacja w ciele klasy – bezpieczna nawet gdy makro ma zbędny średnik
+    std::string deviceId = IOINIT2_DEVICEID__PROTOTYPE;
 
-    std::string userid = USERID;
-    std::string projectid = PROJECTID__PASILLO;
-    std::string deviceid = DEVICEID__PASILLO;
+public:
+    using Callback = void (*)(String key, String value);
 
-public : 
+    /// Opcjonalnie nadpisz device ID (np. z auth.h po aktualizacji)
+    void setDeviceId(const std::string& id) { deviceId = id; }
 
-    typedef void (*Callback)(String key, String value);
+    void setCallback(Callback cb) { callback = cb; }
 
-    void setCallback(Callback cb) {
-        callback = cb;
+    // ========== Nowe API – struktura ioinit2 ==========
+
+    /// Ustawia timestamp serwera na devices/{deviceId}/time
+    void setDeviceTime() {
+        Firebase.RTDB.setTimestamp(&fbData, path("time"));
     }
 
-    void setTimestamp() {
-        Firebase.RTDB.setTimestamp(&fbData, "projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
+    /// Zapisuje stan GPIO: devices/{deviceId}/state/gpio/{index}
+    void setGpio(int index, int value) {
+        Firebase.RTDB.setInt(&fbData, path("state/gpio/" + std::to_string(index)), value);
     }
 
-    void setPin(std::string pin, int value) {
-        std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
-        Firebase.RTDB.setInt(&fbData, path + pin, value);
+    /// Ustawia online/offline: devices/{deviceId}/online
+    void setOnline(bool online) {
+        Firebase.RTDB.setBool(&fbData, path("online"), online);
     }
 
-    void setPinString(std::string pin, std::string value) {
-        std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
-        Firebase.RTDB.setString(&fbData, path + pin, value);
+    /// Generyczny set int  → devices/{deviceId}/{key}
+    void setData(const std::string& key, int value) {
+        Firebase.RTDB.setInt(&fbData, path(key), value);
     }
 
-    String getTimestamp() {
-        Firebase.RTDB.get(&fbData, "projects/" + projectid + "/devices/" + deviceid + "/pins/time/");
-        return fbData.stringData();
+    /// Generyczny set string → devices/{deviceId}/{key}
+    void setData(const std::string& key, const std::string& value) {
+        Firebase.RTDB.setString(&fbData, path(key), value);
     }
+
+    // ========== Połączenie i stream ==========
 
     void connectFirebase() {
         Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
-        fbConfig.database_url = FIREBASE_DATABASE_URL;
-        fbConfig.api_key = FIREBASE_API_KEY;
-        fbAuth.user.email = FIREBASE_USER_EMAIL;
-        fbAuth.user.password = FIREBASE_USER_PASSWORD;
+        Serial.printf("Device ID: %s\n", deviceId.c_str());
 
+        fbConfig.database_url = IOINIT2_FIREBASE_DATABASE_URL;
+        fbConfig.api_key    = IOINIT2_FIREBASE_API_KEY;
+        fbAuth.user.email   = FIREBASE_USER_EMAIL;
+        fbAuth.user.password = FIREBASE_USER_PASSWORD;
         fbConfig.token_status_callback = tokenStatusCallback;
 
-        #if defined(ESP8266)
-            // required for large file data, increase Rx size as needed.
-            fbData.setBSSLBufferSize(1024 /* Rx buffer size in bytes from 512 - 16384 */, 1024 /* Tx buffer size in bytes from 512 - 16384 */);
-        #endif
-
+#if defined(ESP8266)
+        fbData.setBSSLBufferSize(1024, 1024);
+#endif
         fbConfig.fcs.download_buffer_size = 2048;
 
         Firebase.begin(&fbConfig, &fbAuth);
-
         Firebase.reconnectWiFi(true);
 
-        std::string path = "projects/" + projectid + "/devices/" + deviceid + "/pins/";
-
-        if (!Firebase.RTDB.beginStream(&fbData, path))
-            Serial.printf("Stream begin error %s\n\n", fbData.errorReason().c_str());
+        std::string streamPath = path("");  // devices/{deviceId}/
+        if (!Firebase.RTDB.beginStream(&fbData, streamPath)) {
+            Serial.printf("Stream begin error: %s\n", fbData.errorReason().c_str());
+        } else {
+            Serial.printf("Stream listening on: %s\n", streamPath.c_str());
+        }
     }
 
     void firebaseStream() {
-        if (Firebase.ready()) {
-            if (!Firebase.RTDB.readStream(&fbData))
-            Serial.printf("Stream read error %s\n\n", fbData.errorReason().c_str());
-            if (fbData.streamTimeout())
-            Serial.printf("Stream timeout, resuming...\n");
-            if (fbData.streamAvailable()) {
-                // Serial.printf("Stream path: %s\nevent path: %s\ndata type: %s\nevent type: %s\nvalue: %d\n\n",
-                //     fbData.streamPath().c_str(),
-                //     fbData.dataPath().c_str(),
-                //     fbData.dataType().c_str(),
-                //     fbData.eventType().c_str(),
-                //     fbData.intData());
-                    
-                // Serial.printf("Stream data: %s\n\n", fbData.jsonString().c_str());
+        if (!Firebase.ready()) return;
 
-                if (fbData.dataType() == "json") {
-                    FirebaseJson *json = fbData.jsonObjectPtr();
-                    String jsonStr;
-                    json->toString(jsonStr, true);
-                    // Serial.println(jsonStr);
-                    size_t len = json->iteratorBegin();
-                    String key, value = "";
-                    int type = 0;
-                    for (size_t i = 0; i < len; i++) {
-                        json->iteratorGet(i, type, key, value);
-                        // Serial.printf("key: %s, value: %s, type: %s\n", 
-                        //     key.c_str(), 
-                        //     value.c_str(), 
-                        //     type == FirebaseJson::JSON_OBJECT ? "object" : "array"
-                        //     );
-                        if (callback) {
-                            callback(key.c_str(), value.c_str());
-                        }
-                    }
-                }
+        if (!Firebase.RTDB.readStream(&fbData)) {
+            Serial.printf("Stream read error: %s\n", fbData.errorReason().c_str());
+            return;
+        }
+
+        if (fbData.streamTimeout()) {
+            Serial.println("Stream timeout, resuming…");
+            return;
+        }
+
+        if (!fbData.streamAvailable()) return;
+        if (fbData.dataType() != "json")   return;
+
+        FirebaseJson* json = fbData.jsonObjectPtr();
+        size_t len = json->iteratorBegin();
+        String key, value;
+        int type = 0;
+
+        for (size_t i = 0; i < len; i++) {
+            json->iteratorGet(i, type, key, value);
+
+            if (type == FirebaseJson::JSON_OBJECT && key == "state") {
+                // Przekaż wszystkie klucze ze state do callbacku (led, gpio2, brightness, …)
+                flattenState(json);
+            } else if (callback) {
+                callback(key, value);
             }
         }
-        else {
-            Serial.printf("Stream error %s\n\n", fbData.errorReason().c_str());
-        }
+        json->iteratorEnd();
     }
+
+    bool isConnected() { return Firebase.ready(); }
+
+    // ========== Helpers ==========
+
+    /// Zwraca ścieżkę devices/{deviceId}/ + subpath
+    std::string path(const std::string& subpath) const {
+        if (subpath.empty()) return "devices/" + deviceId;
+        return "devices/" + deviceId + "/" + subpath;
+    }
+
 private:
-    Callback callback;
+    Callback callback = nullptr;
+
+    /// Parsuje obiekt "state" – przekazuje wszystkie jego klucze do callbacku
+    /// Np. {"led":1, "gpio2":0, "brightness":128} → callback("led","1"), callback("gpio2","0"), …
+    void flattenState(FirebaseJson* json) {
+        FirebaseJsonData stateData;
+        if (!json->get(stateData, "state")) return;
+
+        FirebaseJson stateJson;
+        stateJson.setJsonData(stateData.stringValue);
+
+        size_t len = stateJson.iteratorBegin();
+        String key, value;
+        int type = 0;
+        for (size_t i = 0; i < len; i++) {
+            stateJson.iteratorGet(i, type, key, value);
+            if (callback) callback(key, value);
+        }
+        stateJson.iteratorEnd();
+    }
 };
