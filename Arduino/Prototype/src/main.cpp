@@ -6,10 +6,12 @@
 #include <OTAService.h>
 
 // ---- Zmienne globalne ----
-uint64_t startUs = 0;  // czas startu w µs (micros64 – 64-bit, brak overflow)
+uint64_t startUs = 0;
 Timer timeNow;
 system_clock::time_point timeSnapPoint;
-bool ledState = false;  // stan LED z Firebase (gpio2)
+bool ledState = false;
+bool pendingPing = false;
+String lastPingValue = "";  // ostatnia obsłużona wartość pingRequest
 
 // ---- Serwisy ----
 WiFiService wifiService;
@@ -22,13 +24,18 @@ OTAService otaService;
 void onFirebaseData(String key, String value) {
   if (key == "time") {
     timeSnapPoint = timeService.snapTimePoint(std::stoll(value.c_str()));
-    Serial.println("Time synced: " + value);
   }
   if (key == "gpio2") {
     ledState = (value.toInt() != 0);
     // ESP8266: LED_BUILTIN aktywny LOW
     digitalWrite(LED_BUILTIN, ledState ? LOW : HIGH);
-    Serial.println("LED: " + String(ledState ? "ON" : "OFF"));
+  }
+  if (key == "pingRequest") {
+    // Odpowiadaj tylko jeśli to NOWY ping (ignoruj echo z full-JSON streamu)
+    if (value != lastPingValue) {
+      lastPingValue = value;
+      pendingPing = true;
+    }
   }
 }
 
@@ -82,6 +89,12 @@ void loop() {
   static uint64_t lastHeartbeatUs = 0;
   if (micros64() - lastHeartbeatUs >= 3600000000ULL && firebaseService.isConnected()) {
     lastHeartbeatUs = micros64();
+    firebaseService.setDeviceTime();
+  }
+
+  // Odpowiedź na ping – poza callbackiem, żeby nie konfliktować ze streamem
+  if (pendingPing) {
+    pendingPing = false;
     firebaseService.setDeviceTime();
   }
 
