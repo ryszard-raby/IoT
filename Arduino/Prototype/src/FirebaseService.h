@@ -1,11 +1,22 @@
 #include <Firebase_ESP_Client.h>
 #include <addons/TokenHelper.h>
 #include <C:\Users\Richart\OneDrive\auth\auth.h>
+#include <vector>
 
 // ---- Fallback – dopóki auth.h nie ma IOINIT2_DEVICEID__PROTOTYPE ----
 #ifndef IOINIT2_DEVICEID__PROTOTYPE
 #define IOINIT2_DEVICEID__PROTOTYPE DEVICEID__PROTOTYPE
 #endif
+
+// ---- Struktura pojedynczego zdarzenia harmonogramu ----
+struct ScheduleEntry {
+    String gpio;          // nazwa pinu, np. "gpio5"
+    int minValue;         // wartość revert (z ButtonConfig.minValue)
+    int triggerHour;      // godzina wyzwolenia (0–23)
+    int triggerMinute;    // minuta wyzwolenia (0–59)
+    int value;            // wartość do ustawienia
+    int durationMinutes;  // czas trwania w minutach (0 = bez revertu)
+};
 
 // ---- Firebase globals (singleton per device) ----
 FirebaseData fbData;
@@ -18,11 +29,16 @@ class FirebaseService {
 
 public:
     using Callback = void (*)(String key, String value);
+    using ScheduleCallback = void (*)(const ScheduleEntry& entry);
+    /// gpio – nazwa pinu do wyczyszczenia; pusty string = wyczyść wszystko
+    using ScheduleClearCallback = void (*)(const String& gpio);
 
     /// Opcjonalnie nadpisz device ID (np. z auth.h po aktualizacji)
     void setDeviceId(const std::string& id) { deviceId = id; }
 
     void setCallback(Callback cb) { callback = cb; }
+    void setScheduleCallback(ScheduleCallback cb) { scheduleCallback = cb; }
+    void setScheduleClearCallback(ScheduleClearCallback cb) { scheduleClearCallback = cb; }
 
     // ========== Nowe API – struktura ioinit2 ==========
 
@@ -96,7 +112,23 @@ public:
 
         // ---- JSON (całe obiekty, np. {"state":{...}}) ----
         if (fbData.dataType() == "json") {
+            String dp = fbData.dataPath();
             FirebaseJson* json = fbData.jsonObjectPtr();
+
+            // ---- Pod-ścieżka /buttons lub /buttons/{id} (aktualizacja UI) ----
+            if (dp == "/buttons") {
+                // Cały obiekt buttons – klucze to buttonId
+                if (scheduleClearCallback) scheduleClearCallback("");
+                parseButtonsJson(json);
+                return;
+            }
+            if (dp.startsWith("/buttons/")) {
+                // Pojedynczy button – klucze to pola (gpio, schedule, …)
+                parseSingleButtonJson(json);
+                return;
+            }
+
+            // ---- Pełny obiekt urządzenia (klucze: state, buttons, time, …) ----
             size_t len = json->iteratorBegin();
             String key, value;
             int type = 0;
@@ -106,6 +138,10 @@ public:
 
                 if (type == FirebaseJson::JSON_OBJECT && key == "state") {
                     flattenState(json);
+                } else if (type == FirebaseJson::JSON_OBJECT && key == "buttons") {
+                    // Przekazujemy string JSON zamiast wskaźnika – unikamy kolizji iteratora
+                    if (scheduleClearCallback) scheduleClearCallback("");
+                    parseButtonsJsonString(value);
                 } else if (callback) {
                     callback(key, value);
                 }
@@ -136,6 +172,8 @@ public:
 
 private:
     Callback callback = nullptr;
+    ScheduleCallback scheduleCallback = nullptr;
+    ScheduleClearCallback scheduleClearCallback = nullptr;
 
     /// Parsuje obiekt "state" – przekazuje wszystkie jego klucze do callbacku
     /// Np. {"led":1, "gpio2":0, "brightness":128} → callback("led","1"), callback("gpio2","0"), …
@@ -154,5 +192,97 @@ private:
             if (callback) callback(key, value);
         }
         stateJson.iteratorEnd();
+    }
+
+    /// Parsuje pełny obiekt "buttons" (klucze = buttonId) z FirebaseJson* (ścieżka /buttons)
+    void parseButtonsJson(FirebaseJson* json) {
+        size_t len = json->iteratorBegin();
+        String key, value;
+        int type = 0;
+        for (size_t i = 0; i < len; i++) {
+            json->iteratorGet(i, type, key, value);
+            if (type == FirebaseJson::JSON_OBJECT) {
+                parseOneButton(value);
+            }
+        }
+        json->iteratorEnd();
+    }
+
+    /// Parsuje pełny obiekt "buttons" z JSON stringa (z pełnego obiektu urządzenia)
+    void parseButtonsJsonString(const String& buttonsJsonStr) {
+        FirebaseJson buttonsJson;
+        buttonsJson.setJsonData(buttonsJsonStr);
+        parseButtonsJson(&buttonsJson);
+    }
+
+    /// Parsuje pojedynczy button (ścieżka /buttons/{id}) – klucze to gpio, schedule, …
+    void parseSingleButtonJson(FirebaseJson* json) {
+        // Sprawdź czy ten button ma schedule
+        FirebaseJsonData schedData;
+        if (!json->get(schedData, "schedule")) return;
+        if (schedData.type != "array" && schedData.type != "jsonArray") return;
+
+        FirebaseJsonData gpioData, minValData;
+        if (!json->get(gpioData, "gpio")) return;
+        if (!json->get(minValData, "minValue")) return;
+
+        String gpio = gpioData.stringValue;
+        int minValue = minValData.intValue;
+
+        // Wyczyść stare wpisy dla tego GPIO przed dodaniem nowych
+        if (scheduleClearCallback) scheduleClearCallback(gpio);
+
+        parseScheduleArray(schedData.stringValue, gpio, minValue);
+    }
+
+    /// Parsuje pojedynczy button z JSON stringa i dodaje jego harmonogramy
+    void parseOneButton(const String& btnJsonStr) {
+        FirebaseJson btnObj;
+        btnObj.setJsonData(btnJsonStr);
+
+        FirebaseJsonData gpioData, minValData, schedData;
+        if (!btnObj.get(gpioData, "gpio")) return;
+        if (!btnObj.get(minValData, "minValue")) return;
+        if (!btnObj.get(schedData, "schedule")) return;
+        if (schedData.type != "array" && schedData.type != "jsonArray") return;
+
+        String gpio = gpioData.stringValue;
+        int minValue = minValData.intValue;
+
+        parseScheduleArray(schedData.stringValue, gpio, minValue);
+    }
+
+    /// Parsuje tablicę schedule i wywołuje scheduleCallback dla każdego zdarzenia
+    void parseScheduleArray(const String& schedJson, const String& gpio, int minValue) {
+        FirebaseJsonArray schedArr;
+        schedArr.setJsonArrayData(schedJson);
+
+        size_t schedLen = schedArr.size();
+        for (size_t j = 0; j < schedLen; j++) {
+            FirebaseJsonData evData;
+            if (!schedArr.get(evData, j)) continue;
+
+            FirebaseJson evObj;
+            evObj.setJsonData(evData.stringValue);
+
+            FirebaseJsonData thData, tmData, vData, dData;
+            if (!evObj.get(thData, "triggerHour")) continue;
+            if (!evObj.get(tmData, "triggerMinute")) continue;
+            if (!evObj.get(vData, "value")) continue;
+
+            ScheduleEntry entry;
+            entry.gpio = gpio;
+            entry.minValue = minValue;
+            entry.triggerHour = thData.intValue;
+            entry.triggerMinute = tmData.intValue;
+            entry.value = vData.intValue;
+            entry.durationMinutes = 0;
+
+            if (evObj.get(dData, "durationMinutes")) {
+                entry.durationMinutes = dData.intValue;
+            }
+
+            if (scheduleCallback) scheduleCallback(entry);
+        }
     }
 };
