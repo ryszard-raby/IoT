@@ -93,24 +93,35 @@ public:
         }
 
         if (!fbData.streamAvailable()) return;
-        if (fbData.dataType() != "json")   return;
 
-        FirebaseJson* json = fbData.jsonObjectPtr();
-        size_t len = json->iteratorBegin();
-        String key, value;
-        int type = 0;
+        // ---- JSON (całe obiekty, np. {"state":{...}}) ----
+        if (fbData.dataType() == "json") {
+            FirebaseJson* json = fbData.jsonObjectPtr();
+            size_t len = json->iteratorBegin();
+            String key, value;
+            int type = 0;
 
-        for (size_t i = 0; i < len; i++) {
-            json->iteratorGet(i, type, key, value);
+            for (size_t i = 0; i < len; i++) {
+                json->iteratorGet(i, type, key, value);
 
-            if (type == FirebaseJson::JSON_OBJECT && key == "state") {
-                // Przekaż wszystkie klucze ze state do callbacku (led, gpio2, brightness, …)
-                flattenState(json);
-            } else if (callback) {
-                callback(key, value);
+                if (type == FirebaseJson::JSON_OBJECT && key == "state") {
+                    flattenState(json);
+                } else if (callback) {
+                    callback(key, value);
+                }
             }
+            json->iteratorEnd();
+            return;
         }
-        json->iteratorEnd();
+
+        // ---- Pojedyncze wartości (int, string, bool, float) ----
+        // dataPath() → np. "/state/gpio2"  → klucz = "gpio2"
+        String path = fbData.dataPath();
+        int lastSlash = path.lastIndexOf('/');
+        String key = (lastSlash >= 0) ? path.substring(lastSlash + 1) : path;
+        String value = fbData.stringData();
+
+        if (callback) callback(key, value);
     }
 
     bool isConnected() { return Firebase.ready(); }

@@ -6,7 +6,7 @@
 #include <OTAService.h>
 
 // ---- Zmienne globalne ----
-unsigned long startTime = 0;
+uint64_t startUs = 0;  // czas startu w µs (micros64 – 64-bit, brak overflow)
 Timer timeNow;
 system_clock::time_point timeSnapPoint;
 bool ledState = false;  // stan LED z Firebase (gpio2)
@@ -53,8 +53,9 @@ void setup() {
     onFirebaseData(key, value);
   });
   firebaseService.setDeviceTime();
+  firebaseService.setOnline(true);    // zgłoś obecność w bazie
 
-  startTime = millis();
+  startUs = micros64();
   pinMode(LED_BUILTIN, OUTPUT);
 }
 
@@ -63,9 +64,9 @@ void loop() {
   otaService.handle();
   firebaseService.firebaseStream();
 
-  // Oblicz aktualny czas
-  unsigned long elapsed = millis() - startTime;
-  timeNow = timeService.timerFromTimePoint(timeSnapPoint + seconds(elapsed / 1000));
+  // Oblicz aktualny czas – micros64() to 64-bit µs, brak overflow
+  int64_t elapsedUs = micros64() - startUs;
+  timeNow = timeService.timerFromTimePoint(timeSnapPoint + microseconds(elapsedUs));
 
   // Formatuj czas
   char timeBuf[16];
@@ -76,4 +77,13 @@ void loop() {
   oled.stack[0].text = String(timeBuf);
   oled.stack[1].text = ledState ? "LED: ON " : "LED: OFF";
   oled.print();
+
+  // Heartbeat – aktualizuj timestamp co godzinę (dowód życia + sync czasu)
+  static uint64_t lastHeartbeatUs = 0;
+  if (micros64() - lastHeartbeatUs >= 3600000000ULL && firebaseService.isConnected()) {
+    lastHeartbeatUs = micros64();
+    firebaseService.setDeviceTime();
+  }
+
+  delay(100);
 }
