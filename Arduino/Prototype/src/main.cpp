@@ -85,13 +85,6 @@ void loop() {
   oled.stack[1].text = ledState ? "LED: ON " : "LED: OFF";
   oled.print();
 
-  // Heartbeat – aktualizuj timestamp co godzinę (dowód życia + sync czasu)
-  static uint64_t lastHeartbeatUs = 0;
-  if (micros64() - lastHeartbeatUs >= 3600000000ULL && firebaseService.isConnected()) {
-    lastHeartbeatUs = micros64();
-    firebaseService.setDeviceTime();
-  }
-
   // Odpowiedź na ping – poza callbackiem, żeby nie konfliktować ze streamem
   if (pendingPing) {
     pendingPing = false;
