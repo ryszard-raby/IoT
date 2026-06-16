@@ -9,17 +9,16 @@
 #include <map>
 #include <algorithm>
 
-// ---- Struktura revertu (powrót GPIO do minValue po czasie) ----
+// ---- Struktura revertu (powrót pinu do minValue po czasie) ----
 struct PendingRevert {
-  int gpioPin;
-  String gpioName;       // nazwa pinu np. "gpio5" – do zapisu w Firebase
+  String pinName;        // wirtualna nazwa pinu – do zapisu w Firebase
   int revertValue;
   uint64_t revertAtUs;   // micros64() moment revertu (monotoniczny, odporny na zmianę timeSnapPoint)
 };
 
 // ---- Struktura zależności AND na poziomie buttona ----
 struct ButtonDep {
-  String depGpio;    // GPIO od którego zależy (np. "aktywacja")
+  String depPin;     // pin od którego zależy (np. "aktywacja")
   int depValue;      // oczekiwana wartość
   int minValue;      // wartość do wymuszenia gdy warunek nie spełniony
 };
@@ -34,10 +33,10 @@ String lastPingValue = "";  // ostatnia obsłużona wartość pingRequest
 
 // ---- Harmonogram ----
 std::vector<ScheduleEntry> schedules;
-std::set<String> firedToday;           // klucze "gpio:HH:MM" już odpalone dziś
+std::set<String> firedToday;           // klucze "pin:HH:MM" już odpalone dziś
 std::vector<PendingRevert> reverts;    // aktywne reverty (powrót do minValue)
-std::map<String, int> gpioStates;      // bieżący stan wszystkich GPIO (do sprawdzania zależności AND)
-std::map<String, ButtonDep> buttonDeps; // zależności AND na poziomie buttona (key = dependentGpio)
+std::map<String, int> pinStates;       // bieżący stan wszystkich pinów (do sprawdzania zależności AND)
+std::map<String, ButtonDep> buttonDeps; // zależności AND na poziomie buttona (key = dependentPin)
 
 // ---- Serwisy ----
 WiFiService wifiService;
@@ -48,9 +47,9 @@ OTAService otaService;
 
 // ---- Pomocnicze ----
 
-/// Mapuje nazwę GPIO (np. "gpio5") na numer pinu ESP8266.
-/// Zwraca -1 jeśli nazwa nie pasuje.
-int gpioNameToPin(const String& name) {
+/// Jedyny punkt mapowania wirtualnej nazwy pinu na fizyczny pin ESP8266.
+/// Wywoływana tylko przed digitalWrite/pinMode. Zwraca -1 dla pinów wirtualnych.
+int virtualPinToPhysical(const String& name) {
   if (name.startsWith("gpio") || name.startsWith("GPIO")) {
     return name.substring(4).toInt();
   }
@@ -59,79 +58,80 @@ int gpioNameToPin(const String& name) {
   return -1;
 }
 
-/// Buduje klucz do zbioru firedToday: "gpio:HH:MM"
-String firedKey(const String& gpio, int hour, int minute) {
+/// Buduje klucz do zbioru firedToday: "pin:HH:MM"
+String firedKey(const String& pin, int hour, int minute) {
   char buf[20];
-  snprintf(buf, sizeof(buf), "%s:%02d:%02d", gpio.c_str(), hour, minute);
+  snprintf(buf, sizeof(buf), "%s:%02d:%02d", pin.c_str(), hour, minute);
   return String(buf);
 }
 
-/// Ustawia fizyczny pin z bramką AND – wywoływana tylko gdy zmieni się stan w Firebase
+/// Ustawia fizyczny pin z bramką AND – wywoływana tylko gdy zmieni się stan w Firebase.
+/// Jedyny punkt styku logiki wirtualnej ze sprzętem (przez virtualPinToPhysical).
 void applyPinState(const String& name) {
-  int pin = gpioNameToPin(name);
-  if (pin < 0) return;
+  int physicalPin = virtualPinToPhysical(name);
+  if (physicalPin < 0) return;
 
-  int fbVal = gpioStates.count(name) ? gpioStates[name] : 0;
+  int fbVal = pinStates.count(name) ? pinStates[name] : 0;
   int targetValue = fbVal;
 
   auto depIt = buttonDeps.find(name);
   if (depIt != buttonDeps.end()) {
-    int depState = gpioStates.count(depIt->second.depGpio) ? gpioStates[depIt->second.depGpio] : -1;
+    int depState = pinStates.count(depIt->second.depPin) ? pinStates[depIt->second.depPin] : -1;
     if (depState != depIt->second.depValue) {
       targetValue = depIt->second.minValue;
     }
   }
 
-  pinMode(pin, OUTPUT);
-  digitalWrite(pin, targetValue ? HIGH : LOW);
+  pinMode(physicalPin, OUTPUT);
+  digitalWrite(physicalPin, targetValue ? HIGH : LOW);
 }
 
 /// Callback – odbiera harmonogramy z Firebase i przebudowuje wektor schedules
 void onScheduleEntry(const ScheduleEntry& entry) {
   // Dodajemy do wektora (duplikaty możliwe przy restreamie – czyścimy przed)
   schedules.push_back(entry);
-  Serial.printf("[SCHEDULE] gpio=%s trigger=%02d:%02d value=%d dur=%dmin",
-                entry.gpio.c_str(), entry.triggerHour, entry.triggerMinute,
+  Serial.printf("[SCHEDULE] pin=%s trigger=%02d:%02d value=%d dur=%dmin",
+                entry.pin.c_str(), entry.triggerHour, entry.triggerMinute,
                 entry.value, entry.durationMinutes);
-  if (entry.dependencyGpio.length() > 0) {
-    Serial.printf(" dep=%s==%d", entry.dependencyGpio.c_str(), entry.dependencyValue);
+  if (entry.dependencyPin.length() > 0) {
+    Serial.printf(" dep=%s==%d", entry.dependencyPin.c_str(), entry.dependencyValue);
   }
   Serial.println();
 }
 
 /// Callback – rejestruje zależność AND na poziomie buttona
-void onButtonDependency(String dependentGpio, int minValue, String depGpio, int depValue, String label) {
+void onButtonDependency(String dependentPin, int minValue, String depPin, int depValue, String label) {
   ButtonDep dep;
-  dep.depGpio = depGpio;
+  dep.depPin = depPin;
   dep.depValue = depValue;
   dep.minValue = minValue;
-  buttonDeps[dependentGpio] = dep;
+  buttonDeps[dependentPin] = dep;
   Serial.printf("[DEP] %s depends on %s==%d\n",
-                dependentGpio.c_str(), depGpio.c_str(), depValue);
-  applyPinState(dependentGpio);
+                dependentPin.c_str(), depPin.c_str(), depValue);
+  applyPinState(dependentPin);
 }
 
 /// Callback – czyści harmonogramy przed załadowaniem nowych z Firebase
-/// gpio == "" → wyczyść tylko schedules (reverty mają własny timer)
-/// gpio != "" → wyczyść schedules + reverts tylko dla danego pinu
-void onScheduleClear(const String& gpio) {
-  if (gpio.length() == 0) {
+/// pin == "" → wyczyść tylko schedules (reverty mają własny timer)
+/// pin != "" → wyczyść schedules + reverts tylko dla danego pinu
+void onScheduleClear(const String& pin) {
+  if (pin.length() == 0) {
     // Czyścimy tylko schedules – pending reverts muszą przetrwać
     schedules.clear();
     Serial.println("[SCHEDULE] Cleared schedules (reverts preserved)");
   } else {
     schedules.erase(
       std::remove_if(schedules.begin(), schedules.end(),
-        [&gpio](const ScheduleEntry& e) { return e.gpio == gpio; }),
+        [&pin](const ScheduleEntry& e) { return e.pin == pin; }),
       schedules.end()
     );
-    // Usuń reverty dla tego GPIO (bezpieczne – zmiana konfiguracji)
+    // Usuń reverty dla tego pinu (bezpieczne – zmiana konfiguracji)
     reverts.erase(
       std::remove_if(reverts.begin(), reverts.end(),
-        [&gpio](const PendingRevert& r) { return r.gpioName == gpio; }),
+        [&pin](const PendingRevert& r) { return r.pinName == pin; }),
       reverts.end()
     );
-    Serial.printf("[SCHEDULE] Cleared gpio=%s\n", gpio.c_str());
+    Serial.printf("[SCHEDULE] Cleared pin=%s\n", pin.c_str());
   }
 }
 
@@ -142,7 +142,7 @@ void onFirebaseData(String key, String value) {
   }
   if (key == "gpio2") {
     ledState = (value.toInt() != 0);
-    // LED_BUILTIN jest teraz sterowany przez pętlę synchronizacji GPIO (krok 2)
+    // LED_BUILTIN jest teraz sterowany przez pętlę synchronizacji pinów (krok 2)
   }
   if (key == "pingRequest") {
     // Odpowiadaj tylko jeśli to NOWY ping (ignoruj echo z full-JSON streamu)
@@ -152,12 +152,12 @@ void onFirebaseData(String key, String value) {
     }
   }
 
-  // Śledź stan GPIO – przy każdej zmianie zastosuj na pinie + pinach zależnych
+  // Śledź stan pinów – przy każdej zmianie zastosuj na pinie + pinach zależnych
   if (key != "time" && key != "pingRequest" && key != "online" &&
       key != "name" && key != "type" && key != "lastSeen" && key != "createdAt" &&
       key != "dependency" && key != "schedule" && key != "label" && key != "gpio" &&
       !key.startsWith("-")) {
-    gpioStates[key] = value.toInt();
+    pinStates[key] = value.toInt();
   }
 }
 
@@ -198,8 +198,8 @@ void loop() {
 
   // Po przetworzeniu streamu – zastosuj stan na wszystkich pinach (z bramką AND)
   if (hadStreamData) {
-    Serial.printf("[LOOP] stream data, gpioStates=%d buttonDeps=%d\n", gpioStates.size(), buttonDeps.size());
-    for (auto const& kv : gpioStates) {
+    Serial.printf("[LOOP] stream data, pinStates=%d buttonDeps=%d\n", pinStates.size(), buttonDeps.size());
+    for (auto const& kv : pinStates) {
       applyPinState(kv.first);
     }
   }
@@ -232,58 +232,63 @@ void loop() {
     Serial.println("[SCHEDULE] Nowy dzień – reset firedToday");
   }
 
-  // 1. Sprawdź reverty (powrót GPIO do minValue) – używamy micros64() (monotoniczny)
+  // 1. Sprawdź reverty (powrót pinu do minValue) – używamy micros64() (monotoniczny)
   uint64_t nowUs = micros64();
   for (auto it = reverts.begin(); it != reverts.end(); ) {
     if (nowUs >= it->revertAtUs) {
-      digitalWrite(it->gpioPin, it->revertValue ? HIGH : LOW);
-      firebaseService.setData("state/" + std::string(it->gpioName.c_str()), it->revertValue);
-      Serial.printf("[SCHEDULE] Revert %s (pin=%d) → %d\n",
-                    it->gpioName.c_str(), it->gpioPin, it->revertValue);
+      int physicalPin = virtualPinToPhysical(it->pinName);
+      if (physicalPin >= 0) {
+        digitalWrite(physicalPin, it->revertValue ? HIGH : LOW);
+        Serial.printf("[SCHEDULE] Revert %s (pin=%d) → %d\n",
+                      it->pinName.c_str(), physicalPin, it->revertValue);
+      } else {
+        Serial.printf("[SCHEDULE] Revert virtual %s → %d\n",
+                      it->pinName.c_str(), it->revertValue);
+      }
+      firebaseService.setData("state/" + std::string(it->pinName.c_str()), it->revertValue);
       it = reverts.erase(it);
     } else {
       ++it;
     }
   }
 
-  // 2. Sprawdź harmonogramy (czasowe)
+  // 2. Sprawdź harmonogramy (czasowe) – jedna ścieżka wirtualna
   for (const auto& entry : schedules) {
     if (timeNow.hour != entry.triggerHour || timeNow.minute != entry.triggerMinute)
       continue;
 
-    String key = firedKey(entry.gpio, entry.triggerHour, entry.triggerMinute);
+    String key = firedKey(entry.pin, entry.triggerHour, entry.triggerMinute);
     if (firedToday.count(key)) continue;  // już odpalone dziś
 
-    int pin = gpioNameToPin(entry.gpio);
-    if (pin < 0) {
-      Serial.printf("[SCHEDULE] Nieznany pin: %s\n", entry.gpio.c_str());
-      continue;
-    }
-
     // ── Sprawdź zależność AND (button-level) – jeśli warunek nie spełniony, pomiń ──
-    if (entry.dependencyGpio.length() > 0) {
-      int depState = gpioStates.count(entry.dependencyGpio) ? gpioStates[entry.dependencyGpio] : -1;
+    if (entry.dependencyPin.length() > 0) {
+      int depState = pinStates.count(entry.dependencyPin) ? pinStates[entry.dependencyPin] : -1;
       if (depState != entry.dependencyValue) {
         Serial.printf("[SCHEDULE] SKIP %s – AND dependency %s==%d (actual=%d)\n",
-                      entry.gpio.c_str(), entry.dependencyGpio.c_str(),
+                      entry.pin.c_str(), entry.dependencyPin.c_str(),
                       entry.dependencyValue, depState);
         continue;
       }
     }
 
-    // Ustaw pin
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, entry.value ? HIGH : LOW);
-    firebaseService.setData("state/" + std::string(entry.gpio.c_str()), entry.value);
+    // Zawsze aktualizuj Firebase i oznacz jako odpalone (zapobiega spamowi)
+    firebaseService.setData("state/" + std::string(entry.pin.c_str()), entry.value);
     firedToday.insert(key);
 
-    Serial.printf("[SCHEDULE] FIRE %s (pin=%d) → %d", entry.gpio.c_str(), pin, entry.value);
+    // Mapuj wirtualną nazwę na fizyczny pin – tylko jeśli istnieje, steruj sprzętem
+    int physicalPin = virtualPinToPhysical(entry.pin);
+    if (physicalPin >= 0) {
+      pinMode(physicalPin, OUTPUT);
+      digitalWrite(physicalPin, entry.value ? HIGH : LOW);
+      Serial.printf("[SCHEDULE] FIRE %s (pin=%d) → %d", entry.pin.c_str(), physicalPin, entry.value);
+    } else {
+      Serial.printf("[SCHEDULE] FIRE virtual %s → %d", entry.pin.c_str(), entry.value);
+    }
 
-    // Zaplanuj revert jeśli durationMinutes > 0
+    // Zaplanuj revert jeśli durationMinutes > 0 (zawsze – również dla wirtualnych)
     if (entry.durationMinutes > 0) {
       PendingRevert rev;
-      rev.gpioPin = pin;
-      rev.gpioName = entry.gpio;
+      rev.pinName = entry.pin;
       rev.revertValue = entry.minValue;
       rev.revertAtUs = micros64() + uint64_t(entry.durationMinutes) * 60ULL * 1000000ULL;
       reverts.push_back(rev);

@@ -10,15 +10,15 @@
 
 // ---- Struktura pojedynczego zdarzenia harmonogramu ----
 struct ScheduleEntry {
-    String gpio;          // nazwa pinu, np. "gpio5"
+    String pin;           // wirtualna nazwa pinu
     int minValue;         // wartość revert (z ButtonConfig.minValue)
     int triggerHour;      // godzina wyzwolenia (0–23)
     int triggerMinute;    // minuta wyzwolenia (0–59)
     int value;            // wartość do ustawienia
     int durationMinutes;  // czas trwania w minutach (0 = bez revertu)
     // ── Button-level AND dependency ──
-    String dependencyGpio;   // GPIO do sprawdzenia (puste = brak)
-    int dependencyValue;     // oczekiwana wartość GPIO
+    String dependencyPin;   // pin do sprawdzenia (puste = brak)
+    int dependencyValue;    // oczekiwana wartość pinu
 };
 
 // ---- Firebase globals (singleton per device) ----
@@ -33,10 +33,10 @@ class FirebaseService {
 public:
     using Callback = void (*)(String key, String value);
     using ScheduleCallback = void (*)(const ScheduleEntry& entry);
-    /// gpio – nazwa pinu do wyczyszczenia; pusty string = wyczyść wszystko
-    using ScheduleClearCallback = void (*)(const String& gpio);
-    /// Rejestruje zależność AND na poziomie buttona: dependentGpio zależy od depGpio==depValue
-    using DependencyCallback = void (*)(String dependentGpio, int minValue, String depGpio, int depValue, String label);
+    /// pin – nazwa pinu do wyczyszczenia; pusty string = wyczyść wszystko
+    using ScheduleClearCallback = void (*)(const String& pin);
+    /// Rejestruje zależność AND na poziomie buttona: dependentPin zależy od depPin==depValue
+    using DependencyCallback = void (*)(String dependentPin, int minValue, String depPin, int depValue, String label);
 
     /// Opcjonalnie nadpisz device ID (np. z auth.h po aktualizacji)
     void setDeviceId(const std::string& id) { deviceId = id; }
@@ -53,7 +53,7 @@ public:
         Firebase.RTDB.setTimestamp(&fbData, path("time"));
     }
 
-    /// Zapisuje stan GPIO: devices/{deviceId}/state/gpio/{index}
+    /// Zapisuje stan pinu przez indeks: devices/{deviceId}/state/gpio/{index}
     void setGpio(int index, int value) {
         Firebase.RTDB.setInt(&fbData, path("state/gpio/" + std::to_string(index)), value);
     }
@@ -159,7 +159,7 @@ public:
         // ---- Pojedyncze wartości (int, string, bool, float) ----
         // dataPath() → np. "/state/gpio2"  → klucz = "gpio2"
         String path = fbData.dataPath();
-        // Pomiń aktualizacje pod /buttons/ – to nie są stany GPIO
+        // Pomiń aktualizacje pod /buttons/ – to nie są stany pinów
         if (path.startsWith("/buttons/")) return true;
         int lastSlash = path.lastIndexOf('/');
         String key = (lastSlash >= 0) ? path.substring(lastSlash + 1) : path;
@@ -227,29 +227,29 @@ private:
 
     /// Parsuje pojedynczy button (ścieżka /buttons/{id}) – klucze to gpio, schedule, …
     void parseSingleButtonJson(FirebaseJson* json) {
-        FirebaseJsonData gpioData, minValData, labelData;
-        if (!json->get(gpioData, "gpio")) return;
+        FirebaseJsonData pinData, minValData, labelData;
+        if (!json->get(pinData, "gpio")) return;
         if (!json->get(minValData, "minValue")) return;
-        String gpio = gpioData.stringValue;
+        String pin = pinData.stringValue;
         int minValue = minValData.intValue;
         String label = "";
         if (json->get(labelData, "label")) label = labelData.stringValue;
 
         // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
-        String depGpio = "";
+        String depPin = "";
         int depValue = 0;
         FirebaseJsonData depData;
         if (json->get(depData, "dependency") && depData.stringValue.length() > 0) {
             FirebaseJson depObj;
             depObj.setJsonData(depData.stringValue);
-            FirebaseJsonData dGpio, dVal;
-            if (depObj.get(dGpio, "gpio"))  depGpio = dGpio.stringValue;
+            FirebaseJsonData dPin, dVal;
+            if (depObj.get(dPin, "gpio"))  depPin = dPin.stringValue;
             if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
         }
 
         // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
-        if (depGpio.length() > 0 && dependencyCallback) {
-            dependencyCallback(gpio, minValue, depGpio, depValue, label);
+        if (depPin.length() > 0 && dependencyCallback) {
+            dependencyCallback(pin, minValue, depPin, depValue, label);
         }
 
         // Sprawdź czy ten button ma schedule
@@ -257,10 +257,10 @@ private:
         if (!json->get(schedData, "schedule")) return;
         if (schedData.type != "array" && schedData.type != "jsonArray") return;
 
-        // Wyczyść stare wpisy dla tego GPIO przed dodaniem nowych
-        if (scheduleClearCallback) scheduleClearCallback(gpio);
+        // Wyczyść stare wpisy dla tego pinu przed dodaniem nowych
+        if (scheduleClearCallback) scheduleClearCallback(pin);
 
-        parseScheduleArray(schedData.stringValue, gpio, minValue, depGpio, depValue);
+        parseScheduleArray(schedData.stringValue, pin, minValue, depPin, depValue);
     }
 
     /// Parsuje pojedynczy button z JSON stringa i dodaje jego harmonogramy
@@ -268,29 +268,29 @@ private:
         FirebaseJson btnObj;
         btnObj.setJsonData(btnJsonStr);
 
-        FirebaseJsonData gpioData, minValData, labelData;
-        if (!btnObj.get(gpioData, "gpio")) return;
+        FirebaseJsonData pinData, minValData, labelData;
+        if (!btnObj.get(pinData, "gpio")) return;
         if (!btnObj.get(minValData, "minValue")) return;
-        String gpio = gpioData.stringValue;
+        String pin = pinData.stringValue;
         int minValue = minValData.intValue;
         String label = "";
         if (btnObj.get(labelData, "label")) label = labelData.stringValue;
 
         // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
-        String depGpio = "";
+        String depPin = "";
         int depValue = 0;
         FirebaseJsonData depData;
         if (btnObj.get(depData, "dependency") && depData.stringValue.length() > 0) {
             FirebaseJson depObj;
             depObj.setJsonData(depData.stringValue);
-            FirebaseJsonData dGpio, dVal;
-            if (depObj.get(dGpio, "gpio"))  depGpio = dGpio.stringValue;
+            FirebaseJsonData dPin, dVal;
+            if (depObj.get(dPin, "gpio"))  depPin = dPin.stringValue;
             if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
         }
 
         // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
-        if (depGpio.length() > 0 && dependencyCallback) {
-            dependencyCallback(gpio, minValue, depGpio, depValue, label);
+        if (depPin.length() > 0 && dependencyCallback) {
+            dependencyCallback(pin, minValue, depPin, depValue, label);
         }
 
         // Sprawdź czy ten button ma schedule
@@ -298,12 +298,12 @@ private:
         if (!btnObj.get(schedData, "schedule")) return;
         if (schedData.type != "array" && schedData.type != "jsonArray") return;
 
-        parseScheduleArray(schedData.stringValue, gpio, minValue, depGpio, depValue);
+        parseScheduleArray(schedData.stringValue, pin, minValue, depPin, depValue);
     }
 
     /// Parsuje tablicę schedule i wywołuje scheduleCallback dla każdego zdarzenia
-    void parseScheduleArray(const String& schedJson, const String& gpio, int minValue,
-                            const String& depGpio, int depValue) {
+    void parseScheduleArray(const String& schedJson, const String& pin, int minValue,
+                            const String& depPin, int depValue) {
         FirebaseJsonArray schedArr;
         schedArr.setJsonArrayData(schedJson);
 
@@ -321,13 +321,13 @@ private:
             if (!evObj.get(vData, "value")) continue;
 
             ScheduleEntry entry;
-            entry.gpio = gpio;
+            entry.pin = pin;
             entry.minValue = minValue;
             entry.triggerHour = thData.intValue;
             entry.triggerMinute = tmData.intValue;
             entry.value = vData.intValue;
             entry.durationMinutes = 0;
-            entry.dependencyGpio = depGpio;
+            entry.dependencyPin = depPin;
             entry.dependencyValue = depValue;
 
             if (evObj.get(dData, "durationMinutes")) {
