@@ -16,6 +16,9 @@ struct ScheduleEntry {
     int triggerMinute;    // minuta wyzwolenia (0–59)
     int value;            // wartość do ustawienia
     int durationMinutes;  // czas trwania w minutach (0 = bez revertu)
+    // ── Button-level AND dependency ──
+    String dependencyGpio;   // GPIO do sprawdzenia (puste = brak)
+    int dependencyValue;     // oczekiwana wartość GPIO
 };
 
 // ---- Firebase globals (singleton per device) ----
@@ -32,6 +35,8 @@ public:
     using ScheduleCallback = void (*)(const ScheduleEntry& entry);
     /// gpio – nazwa pinu do wyczyszczenia; pusty string = wyczyść wszystko
     using ScheduleClearCallback = void (*)(const String& gpio);
+    /// Rejestruje zależność AND na poziomie buttona: dependentGpio zależy od depGpio==depValue
+    using DependencyCallback = void (*)(String dependentGpio, int minValue, String depGpio, int depValue, String label);
 
     /// Opcjonalnie nadpisz device ID (np. z auth.h po aktualizacji)
     void setDeviceId(const std::string& id) { deviceId = id; }
@@ -39,6 +44,7 @@ public:
     void setCallback(Callback cb) { callback = cb; }
     void setScheduleCallback(ScheduleCallback cb) { scheduleCallback = cb; }
     void setScheduleClearCallback(ScheduleClearCallback cb) { scheduleClearCallback = cb; }
+    void setDependencyCallback(DependencyCallback cb) { dependencyCallback = cb; }
 
     // ========== Nowe API – struktura ioinit2 ==========
 
@@ -95,20 +101,20 @@ public:
         }
     }
 
-    void firebaseStream() {
-        if (!Firebase.ready()) return;
+    bool firebaseStream() {
+        if (!Firebase.ready()) return false;
 
         if (!Firebase.RTDB.readStream(&fbData)) {
             Serial.printf("Stream read error: %s\n", fbData.errorReason().c_str());
-            return;
+            return false;
         }
 
         if (fbData.streamTimeout()) {
             Serial.println("Stream timeout, resuming…");
-            return;
+            return false;
         }
 
-        if (!fbData.streamAvailable()) return;
+        if (!fbData.streamAvailable()) return false;
 
         // ---- JSON (całe obiekty, np. {"state":{...}}) ----
         if (fbData.dataType() == "json") {
@@ -120,12 +126,12 @@ public:
                 // Cały obiekt buttons – klucze to buttonId
                 if (scheduleClearCallback) scheduleClearCallback("");
                 parseButtonsJson(json);
-                return;
+                return true;
             }
             if (dp.startsWith("/buttons/")) {
                 // Pojedynczy button – klucze to pola (gpio, schedule, …)
                 parseSingleButtonJson(json);
-                return;
+                return true;
             }
 
             // ---- Pełny obiekt urządzenia (klucze: state, buttons, time, …) ----
@@ -147,17 +153,20 @@ public:
                 }
             }
             json->iteratorEnd();
-            return;
+            return true;
         }
 
         // ---- Pojedyncze wartości (int, string, bool, float) ----
         // dataPath() → np. "/state/gpio2"  → klucz = "gpio2"
         String path = fbData.dataPath();
+        // Pomiń aktualizacje pod /buttons/ – to nie są stany GPIO
+        if (path.startsWith("/buttons/")) return true;
         int lastSlash = path.lastIndexOf('/');
         String key = (lastSlash >= 0) ? path.substring(lastSlash + 1) : path;
         String value = fbData.stringData();
 
         if (callback) callback(key, value);
+        return true;
     }
 
     bool isConnected() { return Firebase.ready(); }
@@ -174,6 +183,7 @@ private:
     Callback callback = nullptr;
     ScheduleCallback scheduleCallback = nullptr;
     ScheduleClearCallback scheduleClearCallback = nullptr;
+    DependencyCallback dependencyCallback = nullptr;
 
     /// Parsuje obiekt "state" – przekazuje wszystkie jego klucze do callbacku
     /// Np. {"led":1, "gpio2":0, "brightness":128} → callback("led","1"), callback("gpio2","0"), …
@@ -217,22 +227,40 @@ private:
 
     /// Parsuje pojedynczy button (ścieżka /buttons/{id}) – klucze to gpio, schedule, …
     void parseSingleButtonJson(FirebaseJson* json) {
+        FirebaseJsonData gpioData, minValData, labelData;
+        if (!json->get(gpioData, "gpio")) return;
+        if (!json->get(minValData, "minValue")) return;
+        String gpio = gpioData.stringValue;
+        int minValue = minValData.intValue;
+        String label = "";
+        if (json->get(labelData, "label")) label = labelData.stringValue;
+
+        // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
+        String depGpio = "";
+        int depValue = 0;
+        FirebaseJsonData depData;
+        if (json->get(depData, "dependency") && depData.stringValue.length() > 0) {
+            FirebaseJson depObj;
+            depObj.setJsonData(depData.stringValue);
+            FirebaseJsonData dGpio, dVal;
+            if (depObj.get(dGpio, "gpio"))  depGpio = dGpio.stringValue;
+            if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
+        }
+
+        // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
+        if (depGpio.length() > 0 && dependencyCallback) {
+            dependencyCallback(gpio, minValue, depGpio, depValue, label);
+        }
+
         // Sprawdź czy ten button ma schedule
         FirebaseJsonData schedData;
         if (!json->get(schedData, "schedule")) return;
         if (schedData.type != "array" && schedData.type != "jsonArray") return;
 
-        FirebaseJsonData gpioData, minValData;
-        if (!json->get(gpioData, "gpio")) return;
-        if (!json->get(minValData, "minValue")) return;
-
-        String gpio = gpioData.stringValue;
-        int minValue = minValData.intValue;
-
         // Wyczyść stare wpisy dla tego GPIO przed dodaniem nowych
         if (scheduleClearCallback) scheduleClearCallback(gpio);
 
-        parseScheduleArray(schedData.stringValue, gpio, minValue);
+        parseScheduleArray(schedData.stringValue, gpio, minValue, depGpio, depValue);
     }
 
     /// Parsuje pojedynczy button z JSON stringa i dodaje jego harmonogramy
@@ -240,20 +268,42 @@ private:
         FirebaseJson btnObj;
         btnObj.setJsonData(btnJsonStr);
 
-        FirebaseJsonData gpioData, minValData, schedData;
+        FirebaseJsonData gpioData, minValData, labelData;
         if (!btnObj.get(gpioData, "gpio")) return;
         if (!btnObj.get(minValData, "minValue")) return;
+        String gpio = gpioData.stringValue;
+        int minValue = minValData.intValue;
+        String label = "";
+        if (btnObj.get(labelData, "label")) label = labelData.stringValue;
+
+        // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
+        String depGpio = "";
+        int depValue = 0;
+        FirebaseJsonData depData;
+        if (btnObj.get(depData, "dependency") && depData.stringValue.length() > 0) {
+            FirebaseJson depObj;
+            depObj.setJsonData(depData.stringValue);
+            FirebaseJsonData dGpio, dVal;
+            if (depObj.get(dGpio, "gpio"))  depGpio = dGpio.stringValue;
+            if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
+        }
+
+        // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
+        if (depGpio.length() > 0 && dependencyCallback) {
+            dependencyCallback(gpio, minValue, depGpio, depValue, label);
+        }
+
+        // Sprawdź czy ten button ma schedule
+        FirebaseJsonData schedData;
         if (!btnObj.get(schedData, "schedule")) return;
         if (schedData.type != "array" && schedData.type != "jsonArray") return;
 
-        String gpio = gpioData.stringValue;
-        int minValue = minValData.intValue;
-
-        parseScheduleArray(schedData.stringValue, gpio, minValue);
+        parseScheduleArray(schedData.stringValue, gpio, minValue, depGpio, depValue);
     }
 
     /// Parsuje tablicę schedule i wywołuje scheduleCallback dla każdego zdarzenia
-    void parseScheduleArray(const String& schedJson, const String& gpio, int minValue) {
+    void parseScheduleArray(const String& schedJson, const String& gpio, int minValue,
+                            const String& depGpio, int depValue) {
         FirebaseJsonArray schedArr;
         schedArr.setJsonArrayData(schedJson);
 
@@ -277,6 +327,8 @@ private:
             entry.triggerMinute = tmData.intValue;
             entry.value = vData.intValue;
             entry.durationMinutes = 0;
+            entry.dependencyGpio = depGpio;
+            entry.dependencyValue = depValue;
 
             if (evObj.get(dData, "durationMinutes")) {
                 entry.durationMinutes = dData.intValue;

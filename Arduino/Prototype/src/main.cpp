@@ -6,6 +6,7 @@
 #include <OTAService.h>
 #include <vector>
 #include <set>
+#include <map>
 #include <algorithm>
 
 // ---- Struktura revertu (powrót GPIO do minValue po czasie) ----
@@ -14,6 +15,13 @@ struct PendingRevert {
   String gpioName;       // nazwa pinu np. "gpio5" – do zapisu w Firebase
   int revertValue;
   uint64_t revertAtUs;   // micros64() moment revertu (monotoniczny, odporny na zmianę timeSnapPoint)
+};
+
+// ---- Struktura zależności AND na poziomie buttona ----
+struct ButtonDep {
+  String depGpio;    // GPIO od którego zależy (np. "aktywacja")
+  int depValue;      // oczekiwana wartość
+  int minValue;      // wartość do wymuszenia gdy warunek nie spełniony
 };
 
 // ---- Zmienne globalne ----
@@ -28,6 +36,8 @@ String lastPingValue = "";  // ostatnia obsłużona wartość pingRequest
 std::vector<ScheduleEntry> schedules;
 std::set<String> firedToday;           // klucze "gpio:HH:MM" już odpalone dziś
 std::vector<PendingRevert> reverts;    // aktywne reverty (powrót do minValue)
+std::map<String, int> gpioStates;      // bieżący stan wszystkich GPIO (do sprawdzania zależności AND)
+std::map<String, ButtonDep> buttonDeps; // zależności AND na poziomie buttona (key = dependentGpio)
 
 // ---- Serwisy ----
 WiFiService wifiService;
@@ -56,13 +66,49 @@ String firedKey(const String& gpio, int hour, int minute) {
   return String(buf);
 }
 
+/// Ustawia fizyczny pin z bramką AND – wywoływana tylko gdy zmieni się stan w Firebase
+void applyPinState(const String& name) {
+  int pin = gpioNameToPin(name);
+  if (pin < 0) return;
+
+  int fbVal = gpioStates.count(name) ? gpioStates[name] : 0;
+  int targetValue = fbVal;
+
+  auto depIt = buttonDeps.find(name);
+  if (depIt != buttonDeps.end()) {
+    int depState = gpioStates.count(depIt->second.depGpio) ? gpioStates[depIt->second.depGpio] : -1;
+    if (depState != depIt->second.depValue) {
+      targetValue = depIt->second.minValue;
+    }
+  }
+
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, targetValue ? HIGH : LOW);
+}
+
 /// Callback – odbiera harmonogramy z Firebase i przebudowuje wektor schedules
 void onScheduleEntry(const ScheduleEntry& entry) {
   // Dodajemy do wektora (duplikaty możliwe przy restreamie – czyścimy przed)
   schedules.push_back(entry);
-  Serial.printf("[SCHEDULE] gpio=%s trigger=%02d:%02d value=%d dur=%dmin\n",
+  Serial.printf("[SCHEDULE] gpio=%s trigger=%02d:%02d value=%d dur=%dmin",
                 entry.gpio.c_str(), entry.triggerHour, entry.triggerMinute,
                 entry.value, entry.durationMinutes);
+  if (entry.dependencyGpio.length() > 0) {
+    Serial.printf(" dep=%s==%d", entry.dependencyGpio.c_str(), entry.dependencyValue);
+  }
+  Serial.println();
+}
+
+/// Callback – rejestruje zależność AND na poziomie buttona
+void onButtonDependency(String dependentGpio, int minValue, String depGpio, int depValue, String label) {
+  ButtonDep dep;
+  dep.depGpio = depGpio;
+  dep.depValue = depValue;
+  dep.minValue = minValue;
+  buttonDeps[dependentGpio] = dep;
+  Serial.printf("[DEP] %s depends on %s==%d\n",
+                dependentGpio.c_str(), depGpio.c_str(), depValue);
+  applyPinState(dependentGpio);
 }
 
 /// Callback – czyści harmonogramy przed załadowaniem nowych z Firebase
@@ -96,8 +142,7 @@ void onFirebaseData(String key, String value) {
   }
   if (key == "gpio2") {
     ledState = (value.toInt() != 0);
-    // ESP8266: LED_BUILTIN aktywny LOW
-    digitalWrite(LED_BUILTIN, ledState ? LOW : HIGH);
+    // LED_BUILTIN jest teraz sterowany przez pętlę synchronizacji GPIO (krok 2)
   }
   if (key == "pingRequest") {
     // Odpowiadaj tylko jeśli to NOWY ping (ignoruj echo z full-JSON streamu)
@@ -105,6 +150,14 @@ void onFirebaseData(String key, String value) {
       lastPingValue = value;
       pendingPing = true;
     }
+  }
+
+  // Śledź stan GPIO – przy każdej zmianie zastosuj na pinie + pinach zależnych
+  if (key != "time" && key != "pingRequest" && key != "online" &&
+      key != "name" && key != "type" && key != "lastSeen" && key != "createdAt" &&
+      key != "dependency" && key != "schedule" && key != "label" && key != "gpio" &&
+      !key.startsWith("-")) {
+    gpioStates[key] = value.toInt();
   }
 }
 
@@ -130,6 +183,7 @@ void setup() {
   });
   firebaseService.setScheduleCallback(onScheduleEntry);
   firebaseService.setScheduleClearCallback(onScheduleClear);
+  firebaseService.setDependencyCallback(onButtonDependency);
   firebaseService.setDeviceTime();
   firebaseService.setOnline(true);    // zgłoś obecność w bazie
 
@@ -140,7 +194,15 @@ void setup() {
 // ---- Loop ----
 void loop() {
   otaService.handle();
-  firebaseService.firebaseStream();
+  bool hadStreamData = firebaseService.firebaseStream();
+
+  // Po przetworzeniu streamu – zastosuj stan na wszystkich pinach (z bramką AND)
+  if (hadStreamData) {
+    Serial.printf("[LOOP] stream data, gpioStates=%d buttonDeps=%d\n", gpioStates.size(), buttonDeps.size());
+    for (auto const& kv : gpioStates) {
+      applyPinState(kv.first);
+    }
+  }
 
   // Oblicz aktualny czas – micros64() to 64-bit µs, brak overflow
   int64_t elapsedUs = micros64() - startUs;
@@ -184,7 +246,7 @@ void loop() {
     }
   }
 
-  // 2. Sprawdź harmonogramy
+  // 2. Sprawdź harmonogramy (czasowe)
   for (const auto& entry : schedules) {
     if (timeNow.hour != entry.triggerHour || timeNow.minute != entry.triggerMinute)
       continue;
@@ -196,6 +258,17 @@ void loop() {
     if (pin < 0) {
       Serial.printf("[SCHEDULE] Nieznany pin: %s\n", entry.gpio.c_str());
       continue;
+    }
+
+    // ── Sprawdź zależność AND (button-level) – jeśli warunek nie spełniony, pomiń ──
+    if (entry.dependencyGpio.length() > 0) {
+      int depState = gpioStates.count(entry.dependencyGpio) ? gpioStates[entry.dependencyGpio] : -1;
+      if (depState != entry.dependencyValue) {
+        Serial.printf("[SCHEDULE] SKIP %s – AND dependency %s==%d (actual=%d)\n",
+                      entry.gpio.c_str(), entry.dependencyGpio.c_str(),
+                      entry.dependencyValue, depState);
+        continue;
+      }
     }
 
     // Ustaw pin
