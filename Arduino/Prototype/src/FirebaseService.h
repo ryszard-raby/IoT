@@ -245,7 +245,7 @@ private:
             modeCallback(pin, modeData.stringValue);
         }
 
-        // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
+        // ── Button-level dependency (AND gate) – zawsze wywołaj (set lub clear) ──
         String depPin = "";
         int depValue = 0;
         FirebaseJsonData depData;
@@ -256,13 +256,11 @@ private:
             if (depObj.get(dPin, "gpio"))  depPin = dPin.stringValue;
             if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
         }
-
-        // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
-        if (depPin.length() > 0 && dependencyCallback) {
+        if (dependencyCallback) {
             dependencyCallback(pin, minValue, depPin, depValue, label);
         }
 
-        // Sprawdź czy ten button ma schedule
+        // Sprawdź czy ten button ma schedule (parseSingleButtonJson)
         FirebaseJsonData schedData;
         if (!json->get(schedData, "schedule")) return;
         if (schedData.type != "array" && schedData.type != "jsonArray") return;
@@ -292,7 +290,7 @@ private:
             modeCallback(pin, modeData.stringValue);
         }
 
-        // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
+        // ── Button-level dependency (AND gate) – zawsze wywołaj (set lub clear) ──
         String depPin = "";
         int depValue = 0;
         FirebaseJsonData depData;
@@ -303,11 +301,11 @@ private:
             if (depObj.get(dPin, "gpio"))  depPin = dPin.stringValue;
             if (depObj.get(dVal,  "value")) depValue = dVal.intValue;
         }
-
-        // Zarejestruj zależność (nawet bez schedule – do wymuszania OFF)
-        if (depPin.length() > 0 && dependencyCallback) {
+        if (dependencyCallback) {
             dependencyCallback(pin, minValue, depPin, depValue, label);
         }
+
+        // Sprawdź czy ten button ma schedule (parseOneButton)
 
         // Sprawdź czy ten button ma schedule
         FirebaseJsonData schedData;

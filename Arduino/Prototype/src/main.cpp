@@ -174,8 +174,15 @@ void onScheduleEntry(const ScheduleEntry& entry) {
   Serial.println();
 }
 
-/// Callback – rejestruje zależność AND na poziomie buttona
+/// Callback – rejestruje lub usuwa zależność AND na poziomie buttona
 void onButtonDependency(String dependentPin, int minValue, String depPin, int depValue, String label) {
+  if (depPin.length() == 0) {
+    // Brak pola dependency w JSON → usuń zależność dla tego pinu
+    if (buttonDeps.erase(dependentPin)) {
+      Serial.printf("[DEP] %s – dependency cleared\n", dependentPin.c_str());
+    }
+    return;
+  }
   ButtonDep dep;
   dep.depPin = depPin;
   dep.depValue = depValue;
