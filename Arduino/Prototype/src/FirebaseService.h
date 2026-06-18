@@ -37,6 +37,8 @@ public:
     using ScheduleClearCallback = void (*)(const String& pin);
     /// Rejestruje zależność AND na poziomie buttona: dependentPin zależy od depPin==depValue
     using DependencyCallback = void (*)(String dependentPin, int minValue, String depPin, int depValue, String label);
+    /// Rejestruje tryb pinu: output | input | servo
+    using ModeCallback = void (*)(String pin, String mode);
 
     /// Opcjonalnie nadpisz device ID (np. z auth.h po aktualizacji)
     void setDeviceId(const std::string& id) { deviceId = id; }
@@ -45,6 +47,7 @@ public:
     void setScheduleCallback(ScheduleCallback cb) { scheduleCallback = cb; }
     void setScheduleClearCallback(ScheduleClearCallback cb) { scheduleClearCallback = cb; }
     void setDependencyCallback(DependencyCallback cb) { dependencyCallback = cb; }
+    void setModeCallback(ModeCallback cb) { modeCallback = cb; }
 
     // ========== Nowe API – struktura ioinit2 ==========
 
@@ -184,6 +187,7 @@ private:
     ScheduleCallback scheduleCallback = nullptr;
     ScheduleClearCallback scheduleClearCallback = nullptr;
     DependencyCallback dependencyCallback = nullptr;
+    ModeCallback modeCallback = nullptr;
 
     /// Parsuje obiekt "state" – przekazuje wszystkie jego klucze do callbacku
     /// Np. {"led":1, "gpio2":0, "brightness":128} → callback("led","1"), callback("gpio2","0"), …
@@ -235,6 +239,12 @@ private:
         String label = "";
         if (json->get(labelData, "label")) label = labelData.stringValue;
 
+        // ── Tryb pinu (output | input | servo) – tylko gdy jawnie ustawiony (niepusty) ──
+        FirebaseJsonData modeData;
+        if (json->get(modeData, "mode") && modeData.stringValue.length() > 0 && modeCallback) {
+            modeCallback(pin, modeData.stringValue);
+        }
+
         // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
         String depPin = "";
         int depValue = 0;
@@ -275,6 +285,12 @@ private:
         int minValue = minValData.intValue;
         String label = "";
         if (btnObj.get(labelData, "label")) label = labelData.stringValue;
+
+        // ── Tryb pinu (output | input | servo) – tylko gdy jawnie ustawiony (niepusty) ──
+        FirebaseJsonData modeData;
+        if (btnObj.get(modeData, "mode") && modeData.stringValue.length() > 0 && modeCallback) {
+            modeCallback(pin, modeData.stringValue);
+        }
 
         // ── Button-level dependency (AND gate) – zawsze wyodrębnij ──
         String depPin = "";

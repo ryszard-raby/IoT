@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Servo.h>
 #include <WiFiService.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
@@ -38,6 +39,12 @@ std::vector<PendingRevert> reverts;    // aktywne reverty (powrót do minValue)
 std::map<String, int> pinStates;       // bieżący stan wszystkich pinów (do sprawdzania zależności AND)
 std::map<String, ButtonDep> buttonDeps; // zależności AND na poziomie buttona (key = dependentPin)
 
+// ── Tryby pinów / Servo / Wejścia ──
+std::map<String, String> pinModes;     // pin → "output" | "input" | "servo"
+std::map<String, Servo> servos;        // pin → Servo instance (tylko dla trybu servo)
+std::map<String, int> inputStates;     // ostatni odczytany stan pinu wejściowego (do detekcji zmiany)
+uint64_t lastInputPollUs = 0;          // micros64() ostatniego odpytywania wejść
+
 // ---- Serwisy ----
 WiFiService wifiService;
 FirebaseService firebaseService;
@@ -65,9 +72,13 @@ String firedKey(const String& pin, int hour, int minute) {
   return String(buf);
 }
 
-/// Ustawia fizyczny pin z bramką AND – wywoływana tylko gdy zmieni się stan w Firebase.
-/// Jedyny punkt styku logiki wirtualnej ze sprzętem (przez virtualPinToPhysical).
+/// Ustawia fizyczny pin z bramką AND – tylko dla trybu output.
+/// Piny input i servo są obsługiwane osobno (odczyt / Servo.write).
 void applyPinState(const String& name) {
+  // Input, servo i PWM – nie ruszamy przez digitalWrite
+  auto modeIt = pinModes.find(name);
+  if (modeIt != pinModes.end() && modeIt->second != "output") return;
+
   int physicalPin = virtualPinToPhysical(name);
   if (physicalPin < 0) return;
 
@@ -84,6 +95,70 @@ void applyPinState(const String& name) {
 
   pinMode(physicalPin, OUTPUT);
   digitalWrite(physicalPin, targetValue ? HIGH : LOW);
+}
+
+/// Callback – odbiera tryb pinu z Firebase i konfiguruje sprzęt
+void onPinMode(String pin, String mode) {
+  // Ignoruj pusty tryb
+  if (mode.length() == 0) return;
+
+  auto it = pinModes.find(pin);
+  // Bez zmian – pomiń
+  if (it != pinModes.end() && it->second == mode) return;
+
+  // "output" jest domyślny – nie nadpisuj nim jawnie ustawionego trybu (pwm/servo/input).
+  // Zapobiega to błędnemu revertowi przy re-streamie pełnego obiektu z Firebase,
+  // gdzie jedna ze ścieżek parsowania może nie zawierać pola mode.
+  if (mode == "output" && it != pinModes.end() && it->second != "output") {
+    Serial.printf("[MODE] %s – ignoring OUTPUT override (currently %s)\n",
+                  pin.c_str(), it->second.c_str());
+    return;
+  }
+
+  pinModes[pin] = mode;
+  int physicalPin = virtualPinToPhysical(pin);
+
+  if (mode == "input") {
+    if (physicalPin >= 0) {
+      pinMode(physicalPin, INPUT);
+      inputStates[pin] = -1;  // wymuś pierwszy odczyt
+      Serial.printf("[MODE] %s → INPUT (pin=%d)\n", pin.c_str(), physicalPin);
+    } else {
+      Serial.printf("[MODE] %s → INPUT (virtual)\n", pin.c_str());
+    }
+  } else if (mode == "servo") {
+    if (physicalPin >= 0) {
+      // Jeśli servo już istnieje, odepnij przed ponownym przypięciem
+      auto it = servos.find(pin);
+      if (it != servos.end()) it->second.detach();
+      Servo srv;
+      srv.attach(physicalPin);
+      servos[pin] = srv;
+      Serial.printf("[MODE] %s → SERVO attached to pin %d\n", pin.c_str(), physicalPin);
+    } else {
+      Serial.printf("[MODE] %s → SERVO (virtual – brak fizycznego pinu)\n", pin.c_str());
+    }
+  } else if (mode == "pwm") {
+    // PWM – wyjście analogowe (0–255), np. jasność LED
+    if (physicalPin >= 0) {
+      // Usuń servo jeśli było
+      auto it = servos.find(pin);
+      if (it != servos.end()) { it->second.detach(); servos.erase(it); }
+      inputStates.erase(pin);
+      pinMode(physicalPin, OUTPUT);
+      analogWrite(physicalPin, 0);
+      Serial.printf("[MODE] %s → PWM (pin=%d)\n", pin.c_str(), physicalPin);
+    } else {
+      Serial.printf("[MODE] %s → PWM (virtual)\n", pin.c_str());
+    }
+  } else {
+    // output (domyślny) – usuń z servo jeśli było, applyPinState zajmie się resztą
+    auto it = servos.find(pin);
+    if (it != servos.end()) { it->second.detach(); servos.erase(it); }
+    inputStates.erase(pin);
+    Serial.printf("[MODE] %s → OUTPUT\n", pin.c_str());
+    applyPinState(pin);
+  }
 }
 
 /// Callback – odbiera harmonogramy z Firebase i przebudowuje wektor schedules
@@ -184,6 +259,7 @@ void setup() {
   firebaseService.setScheduleCallback(onScheduleEntry);
   firebaseService.setScheduleClearCallback(onScheduleClear);
   firebaseService.setDependencyCallback(onButtonDependency);
+  firebaseService.setModeCallback(onPinMode);
   firebaseService.setDeviceTime();
   firebaseService.setOnline(true);    // zgłoś obecność w bazie
 
@@ -196,10 +272,45 @@ void loop() {
   otaService.handle();
   bool hadStreamData = firebaseService.firebaseStream();
 
-  // Po przetworzeniu streamu – zastosuj stan na wszystkich pinach (z bramką AND)
+  // Po przetworzeniu streamu – zastosuj stan na wszystkich pinach
   if (hadStreamData) {
     Serial.printf("[LOOP] stream data, pinStates=%d buttonDeps=%d\n", pinStates.size(), buttonDeps.size());
     for (auto const& kv : pinStates) {
+
+      // ── Bramka AND (dependency) – wspólna dla wszystkich trybów ──
+      int targetValue = kv.second;
+      auto depIt = buttonDeps.find(kv.first);
+      if (depIt != buttonDeps.end()) {
+        int depState = pinStates.count(depIt->second.depPin) ? pinStates[depIt->second.depPin] : -1;
+        if (depState != depIt->second.depValue) {
+          targetValue = depIt->second.minValue;
+        }
+      }
+
+      // Servo – ustaw kąt
+      // PWM – ustaw wypełnienie (analogWrite 0–255)
+      auto modeIt = pinModes.find(kv.first);
+      if (modeIt != pinModes.end()) {
+        if (modeIt->second == "servo") {
+          auto srvIt = servos.find(kv.first);
+          if (srvIt != servos.end()) {
+            int angle = constrain(targetValue, 0, 180);
+            srvIt->second.write(angle);
+            Serial.printf("[SERVO] %s → %d°\n", kv.first.c_str(), angle);
+          }
+          continue;
+        }
+        if (modeIt->second == "pwm") {
+          int physicalPin = virtualPinToPhysical(kv.first);
+          if (physicalPin >= 0) {
+            int duty = constrain(targetValue, 0, 255);
+            analogWrite(physicalPin, duty);
+            Serial.printf("[PWM] %s (pin=%d) → %d/255\n", kv.first.c_str(), physicalPin, duty);
+          }
+          continue;
+        }
+      }
+      // Output – standardowa ścieżka (applyPinState też sprawdza buttonDeps)
       applyPinState(kv.first);
     }
   }
@@ -295,6 +406,23 @@ void loop() {
       Serial.printf(" | revert za %dmin → %d", entry.durationMinutes, entry.minValue);
     }
     Serial.println();
+  }
+
+  // ── Odpytywanie wejść cyfrowych (co ~500ms) ────────────────────────
+  if (nowUs - lastInputPollUs >= 500000ULL) {
+    lastInputPollUs = nowUs;
+    for (auto const& kv : pinModes) {
+      if (kv.second != "input") continue;
+      int physicalPin = virtualPinToPhysical(kv.first);
+      if (physicalPin < 0) continue;
+      int val = digitalRead(physicalPin);
+      int prev = inputStates.count(kv.first) ? inputStates[kv.first] : -1;
+      if (val != prev) {
+        inputStates[kv.first] = val;
+        firebaseService.setData("state/" + std::string(kv.first.c_str()), val);
+        Serial.printf("[INPUT] %s (pin=%d) → %d\n", kv.first.c_str(), physicalPin, val);
+      }
+    }
   }
 
   delay(100);
