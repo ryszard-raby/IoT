@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Firebase_ESP_Client.h>
 #include <addons/TokenHelper.h>
 #include <C:\Users\Richart\OneDrive\auth\auth.h>

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Time.h>
 #include <chrono>
 using namespace std::chrono;
