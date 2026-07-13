@@ -16,6 +16,7 @@ ScheduleManager scheduleManager;
 uint64_t startUs = 0;
 Timer timeNow;
 system_clock::time_point timeSnapPoint;
+uint64_t serverTimestampMs = 0;  // surowy timestamp z Firebase (UTC) – do kluczy logów
 
 // ── LED / Ping ──
 bool ledState = false;
@@ -50,7 +51,8 @@ void _onScheduleClear(const String& pin) {
 /// Główny callback Firebase – łączy dane z Firebase z menedżerami.
 void onFirebaseData(String key, String value) {
   if (key == "time") {
-    timeSnapPoint = timeService.snapTimePoint(std::stoll(value.c_str()));
+    serverTimestampMs = std::stoull(value.c_str());
+    timeSnapPoint = timeService.snapTimePoint(serverTimestampMs);
   }
   if (key == "gpio2") {
     ledState = (value.toInt() != 0);
@@ -116,6 +118,9 @@ void loop() {
   int64_t elapsedUs = micros64() - startUs;
   timeNow = timeService.timerFromTimePoint(timeSnapPoint + microseconds(elapsedUs));
 
+  // Epoch ms dla kluczy logów (UTC, zsynchronizowany z Firebase)
+  uint64_t epochMs = serverTimestampMs + uint64_t(elapsedUs / 1000);
+
   // OLED: godzina + stan LED
   char timeBuf[16];
   snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d",
@@ -132,10 +137,10 @@ void loop() {
 
   // ── Harmonogram ──
   scheduleManager.checkReverts(firebaseService);
-  scheduleManager.checkTriggers(timeNow, pinManager.pinStates, firebaseService);
+  scheduleManager.checkTriggers(timeNow, pinManager.pinStates, firebaseService, epochMs);
 
   // ── Odpytywanie wejść ──
-  pinManager.pollInputs(firebaseService);
+  pinManager.pollInputs(firebaseService, epochMs);
 
   delay(100);
 }

@@ -178,14 +178,16 @@ public:
     }
   }
 
-  /// Odpytywanie wejść cyfrowych co ~500ms – zmiany wysyła do Firebase.
-  void pollInputs(FirebaseService& firebase);
+  /// Odpytywanie wejść cyfrowych co ~500ms – zmiany wysyła do Firebase i loguje.
+  /// @param firebase  Referencja do FirebaseService (do zapisu stanu i logów).
+  /// @param epochMs   Aktualny czas epoch w milisekundach (z TimeService) – klucz logu.
+  void pollInputs(FirebaseService& firebase, uint64_t epochMs);
 };
 
 // Implementacja pollInputs (potrzebuje FirebaseService::setData)
 #include "FirebaseService.h"
 
-inline void PinManager::pollInputs(FirebaseService& firebase) {
+inline void PinManager::pollInputs(FirebaseService& firebase, uint64_t epochMs) {
   uint64_t nowUs = micros64();
   if (nowUs - lastInputPollUs < 500000ULL) return;
   lastInputPollUs = nowUs;
@@ -199,6 +201,10 @@ inline void PinManager::pollInputs(FirebaseService& firebase) {
     if (val != prev) {
       inputStates[kv.first] = val;
       firebase.setData("state/" + std::string(kv.first.c_str()), val);
+      // Zapis logu – tylko gdy mamy sensowny timestamp (nie 0)
+      if (epochMs > 0) {
+        firebase.pushLog(std::string(kv.first.c_str()), val, epochMs);
+      }
       Serial.printf("[INPUT] %s (pin=%d) → %d\n", kv.first.c_str(), physicalPin, val);
     }
   }

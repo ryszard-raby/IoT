@@ -78,6 +78,14 @@ public:
         Firebase.RTDB.setString(&fbData, path(key), value);
     }
 
+    /// Zapisuje wpis logu z timestampem jako kluczem:
+    /// logs/{deviceId}/{gpio}/{timestampMs} = value
+    /// Umożliwia range queries na stronie webowej przez orderByKey().startAt().endAt().
+    void pushLog(const std::string& gpio, int value, uint64_t timestampMs) {
+        std::string logPath = "logs/" + deviceId + "/" + gpio + "/" + std::to_string(timestampMs);
+        Firebase.RTDB.setInt(&fbData, logPath, value);
+    }
+
     // ========== Połączenie i stream ==========
 
     void connectFirebase() {

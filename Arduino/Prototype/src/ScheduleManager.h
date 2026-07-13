@@ -90,8 +90,9 @@ public:
 
   /// Sprawdza harmonogramy czasowe – odpala zdarzenia, planuje reverty.
   /// Resetuje firedToday o północy.
+  /// @param epochMs  Aktualny czas epoch w ms (do klucza logu).
   void checkTriggers(const Timer& timeNow, const std::map<String, int>& pinStates,
-                     FirebaseService& firebase) {
+                     FirebaseService& firebase, uint64_t epochMs) {
     // Reset firedToday o północy
     if (timeNow.hour == 0 && timeNow.minute == 0 && !firedToday.empty()) {
       firedToday.clear();
@@ -119,6 +120,11 @@ public:
       // Aktualizuj Firebase i oznacz jako odpalone
       firebase.setData("state/" + std::string(entry.pin.c_str()), entry.value);
       firedToday.insert(key);
+
+      // Zapis logu triggera harmonogramu
+      if (epochMs > 0) {
+        firebase.pushLog(std::string(entry.pin.c_str()), entry.value, epochMs);
+      }
 
       // Steruj sprzętem
       int physicalPin = PinManager::virtualPinToPhysical(entry.pin);
