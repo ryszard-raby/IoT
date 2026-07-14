@@ -23,6 +23,9 @@ bool ledState = false;
 bool pendingPing = false;
 String lastPingValue = "";
 
+// ── Okresowa synchronizacja czasu (co godzinę) ──
+int lastSyncHour = -1;
+
 // ── Serwisy ──
 WiFiService wifiService;
 FirebaseService firebaseService;
@@ -132,6 +135,12 @@ void loop() {
   // Odpowiedź na ping
   if (pendingPing) {
     pendingPing = false;
+    firebaseService.setDeviceTime();
+  }
+
+  // ── Okresowa synchronizacja czasu (co godzinę) ──
+  if (timeNow.hour != lastSyncHour) {
+    lastSyncHour = timeNow.hour;
     firebaseService.setDeviceTime();
   }
 
