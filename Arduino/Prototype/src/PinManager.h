@@ -24,6 +24,7 @@ public:
       return name.substring(4).toInt();
     }
     if (name == "LED_BUILTIN" || name == "led") return LED_BUILTIN;
+    if (name == "A0" || name == "a0") return A0;
     return -1;
   }
 
@@ -85,6 +86,14 @@ public:
         Serial.printf("[MODE] %s → INPUT (pin=%d)\n", pin.c_str(), physicalPin);
       } else {
         Serial.printf("[MODE] %s → INPUT (virtual)\n", pin.c_str());
+      }
+    } else if (mode == "analog") {
+      if (physicalPin >= 0) {
+        pinMode(physicalPin, INPUT);
+        inputStates[pin] = -1;
+        Serial.printf("[MODE] %s → ANALOG (pin=%d, ADC 0–1023)\n", pin.c_str(), physicalPin);
+      } else {
+        Serial.printf("[MODE] %s → ANALOG (virtual)\n", pin.c_str());
       }
     } else if (mode == "servo") {
       if (physicalPin >= 0) {
@@ -154,6 +163,8 @@ public:
 
       auto modeIt = pinModes.find(kv.first);
       if (modeIt != pinModes.end()) {
+        // Read-only modes – skip (these are polled, not driven)
+        if (modeIt->second == "input" || modeIt->second == "analog") continue;
         if (modeIt->second == "servo") {
           auto srvIt = servos.find(kv.first);
           if (srvIt != servos.end()) {
@@ -178,7 +189,8 @@ public:
     }
   }
 
-  /// Odpytywanie wejść cyfrowych co ~500ms – zmiany wysyła do Firebase i loguje.
+  /// Odpytywanie wejść co ~500ms – zmiany wysyła do Firebase i loguje.
+  /// Dla trybu 'input' używa digitalRead (0/1), dla 'analog' używa analogRead (0–1023).
   /// @param firebase  Referencja do FirebaseService (do zapisu stanu i logów).
   /// @param epochMs   Aktualny czas epoch w milisekundach (z TimeService) – klucz logu.
   void pollInputs(FirebaseService& firebase, uint64_t epochMs);
@@ -193,15 +205,20 @@ inline void PinManager::pollInputs(FirebaseService& firebase, uint64_t epochMs) 
   lastInputPollUs = nowUs;
 
   for (auto const& kv : pinModes) {
-    if (kv.second != "input") continue;
+    if (kv.second != "input" && kv.second != "analog") continue;
     int physicalPin = virtualPinToPhysical(kv.first);
     if (physicalPin < 0) continue;
-    int val = digitalRead(physicalPin);
+    int val = (kv.second == "analog") ? analogRead(physicalPin) : digitalRead(physicalPin);
     int prev = inputStates.count(kv.first) ? inputStates[kv.first] : -1;
     if (val != prev) {
+      bool isAnalog = (kv.second == "analog");
+      int delta = abs(val - prev);
+      // Dla analogowego ignorujemy szum – próg 50 (0–1023 = ~5%).
+      // inputStates NIE jest aktualizowane przy pominięciu – dzięki temu
+      // powolne dryftowanie (822→823→…→873) się kumuluje i w końcu odpali.
+      if (isAnalog && delta <= 50) continue;
       inputStates[kv.first] = val;
       firebase.setData("state/" + std::string(kv.first.c_str()), val);
-      // Zapis logu – tylko gdy mamy sensowny timestamp (nie 0)
       if (epochMs > 0) {
         firebase.pushLog(std::string(kv.first.c_str()), val, epochMs);
       }

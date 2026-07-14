@@ -5,9 +5,9 @@
 #include <C:\Users\Richart\OneDrive\auth\auth.h>
 #include <vector>
 
-// ---- Fallback – dopóki auth.h nie ma IOINIT2_DEVICEID__PROTOTYPE ----
-#ifndef IOINIT2_DEVICEID__PROTOTYPE
-#define IOINIT2_DEVICEID__PROTOTYPE DEVICEID__PROTOTYPE
+// ---- Fallback – dopóki auth.h nie ma IOINIT2_DEVICEID ----
+#ifndef IOINIT2_DEVICEID
+#define IOINIT2_DEVICEID DEVICEID
 #endif
 
 // ---- Struktura pojedynczego zdarzenia harmonogramu ----
@@ -30,7 +30,7 @@ FirebaseConfig fbConfig;
 
 class FirebaseService {
     // Inicjalizacja w ciele klasy – bezpieczna nawet gdy makro ma zbędny średnik
-    std::string deviceId = IOINIT2_DEVICEID__PROTOTYPE;
+    std::string deviceId = IOINIT2_DEVICEID;
 
 public:
     using Callback = void (*)(String key, String value);
