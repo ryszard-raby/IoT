@@ -1,9 +1,16 @@
+// ═══════════════════════════════════════════════════════════
+//  FLAGA – zakomentuj, jeśli płytka nie ma ekranu OLED
+// ═══════════════════════════════════════════════════════════
+// #define ENABLE_OLED
+
 #include <Arduino.h>
 #include <Servo.h>
 #include <WiFiService.h>
 #include <FirebaseService.h>
 #include <TimeService.h>
+#ifdef ENABLE_OLED
 #include <Oled.h>
+#endif
 #include <OTAService.h>
 #include <PinManager.h>
 #include <ScheduleManager.h>
@@ -30,7 +37,9 @@ int lastSyncHour = -1;
 WiFiService wifiService;
 FirebaseService firebaseService;
 TimeService timeService;
+#ifdef ENABLE_OLED
 Oled oled;
+#endif
 OTAService otaService;
 
 // ── Callbacki przekazujące do menedżerów (wolne funkcje dla C-style wskaźników) ──
@@ -81,9 +90,11 @@ void setup() {
   Serial.begin(9600);
 
   // OLED
+#ifdef ENABLE_OLED
   oled.init();
   oled.add(0, 0, "00:00:00", 2);
   oled.add(0, 40, "LED: OFF", 1);
+#endif
 
   // WiFi
   wifiService.connect();
@@ -125,12 +136,14 @@ void loop() {
   uint64_t epochMs = serverTimestampMs + uint64_t(elapsedUs / 1000);
 
   // OLED: godzina + stan LED
+#ifdef ENABLE_OLED
   char timeBuf[16];
   snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d",
            timeNow.hour, timeNow.minute, timeNow.second);
   oled.stack[0].text = String(timeBuf);
   oled.stack[1].text = ledState ? "LED: ON " : "LED: OFF";
   oled.print();
+#endif
 
   // Odpowiedź na ping
   if (pendingPing) {
