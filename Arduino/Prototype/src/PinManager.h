@@ -201,7 +201,7 @@ public:
 
 inline void PinManager::pollInputs(FirebaseService& firebase, uint64_t epochMs) {
   uint64_t nowUs = micros64();
-  if (nowUs - lastInputPollUs < 500000ULL) return;
+  if (nowUs - lastInputPollUs < 60000000ULL) return;  // 1 minuta
   lastInputPollUs = nowUs;
 
   for (auto const& kv : pinModes) {
@@ -212,11 +212,19 @@ inline void PinManager::pollInputs(FirebaseService& firebase, uint64_t epochMs) 
     int prev = inputStates.count(kv.first) ? inputStates[kv.first] : -1;
     if (val != prev) {
       bool isAnalog = (kv.second == "analog");
+
+      // Pierwszy odczyt po inicjalizacji (–1) – tylko zapamiętaj, nie loguj
+      if (prev == -1) {
+        inputStates[kv.first] = val;
+        Serial.printf("[INPUT] %s (pin=%d) init → %d\n", kv.first.c_str(), physicalPin, val);
+        continue;
+      }
+
       int delta = abs(val - prev);
-      // Dla analogowego ignorujemy szum – próg 50 (0–1023 = ~5%).
+      // Dla analogowego ignorujemy szum – próg 20 (0–1023 = ~2%).
       // inputStates NIE jest aktualizowane przy pominięciu – dzięki temu
       // powolne dryftowanie (822→823→…→873) się kumuluje i w końcu odpali.
-      if (isAnalog && delta <= 50) continue;
+      if (isAnalog && delta <= 20) continue;
       inputStates[kv.first] = val;
       firebase.setData("state/" + std::string(kv.first.c_str()), val);
       if (epochMs > 0) {

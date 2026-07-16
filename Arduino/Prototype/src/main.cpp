@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 //  FLAGA – zakomentuj, jeśli płytka nie ma ekranu OLED
 // ═══════════════════════════════════════════════════════════
-// #define ENABLE_OLED
+#define ENABLE_OLED
 
 #include <Arduino.h>
 #include <Servo.h>
