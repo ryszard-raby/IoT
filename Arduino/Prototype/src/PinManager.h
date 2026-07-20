@@ -221,10 +221,10 @@ inline void PinManager::pollInputs(FirebaseService& firebase, uint64_t epochMs) 
       }
 
       int delta = abs(val - prev);
-      // Dla analogowego ignorujemy szum – próg 20 (0–1023 = ~2%).
+      // Dla analogowego ignorujemy szum – próg 10 (0–1023 = ~1%).
       // inputStates NIE jest aktualizowane przy pominięciu – dzięki temu
       // powolne dryftowanie (822→823→…→873) się kumuluje i w końcu odpali.
-      if (isAnalog && delta <= 20) continue;
+      if (isAnalog && delta <= 10) continue;
       inputStates[kv.first] = val;
       firebase.setData("state/" + std::string(kv.first.c_str()), val);
       if (epochMs > 0) {
